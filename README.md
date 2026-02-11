@@ -34,6 +34,8 @@ In the AEP ecosystem, value is not derived from speculative capital or asset hoa
 1. 唯一铸币铁律 (The Immutable Minting Law)
 “无产出，不铸币。” 需求币（DemandCoin）唯一的产生途径是经由物理因果闭环验证的公共事务。这意味着：
 
+
+
    
    ·所有的财富增长都对应着物理世界中真实的、可审计的效益。
 
@@ -48,6 +50,8 @@ The Three Pillars of AEP
 1. The Immutable Minting Law
 "No Physical Output, No Currency Minting." DemandCoin is generated exclusively through Public Service Acts (PSA) verified by a physical causal loop. This ensures:
 
+
+
  
    ·All wealth growth corresponds to real, auditable utility in the physical world.
 
@@ -60,6 +64,8 @@ The Three Pillars of AEP
 <br>
 2. 生存基座原则 (Layer 0 Survival Stack)
 “生存是权利，而非奖赏。” AEP 将社会分为双层架构：
+
+
 
   
    ·Layer 0 (生存层)：基础食品、住房、医疗与交通。这部分供给与你的账户余额无关。无论你的信用正负，生存基座始终为你敞开。
@@ -74,6 +80,8 @@ The Three Pillars of AEP
 2. Layer 0: The Survival Evolution Stack
 "Survival is a Right, Not a Reward." AEP architecture separates society into two layers:
 
+
+
   
    ·Layer 0 (Survival Stack): Basic food, housing, healthcare, and transit. This supply is decoupled from your account balance. Whether your balance is positive, zero, or negative, the survival baseline remains open.
 
@@ -87,6 +95,8 @@ The Three Pillars of AEP
 3. 恢复性正义 (Restorative Justice)
 “不为惩罚而生，只为修复而来。” AEP 彻底抛弃了报复性的惩罚制度。当损害发生时：
 
+
+
  
    ·系统启动因果回溯，锁定责任权重。
 
@@ -99,6 +109,8 @@ The Three Pillars of AEP
 <br>
 3. Restorative Justice
 "Not for Punishment, but for Restoration." AEP moves beyond retributive systems. When harm occurs:
+
+
 
   
    ·The system triggers a causal traceback to determine liability weights.
