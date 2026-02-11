@@ -27,62 +27,62 @@ In the AEP ecosystem, value is not derived from speculative capital or asset hoa
 1. 唯一铸币铁律 (The Immutable Minting Law)
 “无产出，不铸币。” 需求币（DemandCoin）唯一的产生途径是经由物理因果闭环验证的公共事务。这意味着：
 
-·所有的财富增长都对应着物理世界中真实的、可审计的效益。
+    ·所有的财富增长都对应着物理世界中真实的、可审计的效益。
 
-·彻底消灭了通货膨胀的金融根源与资本寻租空间。
+    ·彻底消灭了通货膨胀的金融根源与资本寻租空间。
 
-·每一笔新币的诞生，都是对文明有序度提升的奖励。
+    ·每一笔新币的诞生，都是对文明有序度提升的奖励。
 
 
 The Three Pillars of AEP
 1. The Immutable Minting Law
 "No Physical Output, No Currency Minting." DemandCoin is generated exclusively through Public Service Acts (PSA) verified by a physical causal loop. This ensures:
 
-·All wealth growth corresponds to real, auditable utility in the physical world.
+    ·All wealth growth corresponds to real, auditable utility in the physical world.
 
-·The financial roots of inflation and capital rent-seeking are eliminated.
+    ·The financial roots of inflation and capital rent-seeking are eliminated.
 
-·Every new unit of currency is a reward for increasing the "order" (negative entropy) of civilization.
+    ·Every new unit of currency is a reward for increasing the "order" (negative entropy) of civilization.
 
 
 2. 生存基座原则 (Layer 0 Survival Stack)
 “生存是权利，而非奖赏。” AEP 将社会分为双层架构：
 
-·Layer 0 (生存层)：基础食品、住房、医疗与交通。这部分供给与你的账户余额无关。无论你的信用正负，生存基座始终为你敞开。
+    ·Layer 0 (生存层)：基础食品、住房、医疗与交通。这部分供给与你的账户余额无关。无论你的信用正负，生存基座始终为你敞开。
 
-·Layer 1 (自由市场)：基于需求币的体验层。在这里，你可以追求更高阶的审美、稀缺资源与个性化体验。
+    ·Layer 1 (自由市场)：基于需求币的体验层。在这里，你可以追求更高阶的审美、稀缺资源与个性化体验。
 
-·进化逻辑：随着社会劳动累积的财富增加，Layer 0 会不断升级。今天的高级体验，终将成为明天的基础权利。
+    ·进化逻辑：随着社会劳动累积的财富增加，Layer 0 会不断升级。今天的高级体验，终将成为明天的基础权利。
 
 
 2. Layer 0: The Survival Evolution Stack
 "Survival is a Right, Not a Reward." AEP architecture separates society into two layers:
 
-·Layer 0 (Survival Stack): Basic food, housing, healthcare, and transit. This supply is decoupled from your account balance. Whether your balance is positive, zero, or negative, the survival baseline remains open.
+    ·Layer 0 (Survival Stack): Basic food, housing, healthcare, and transit. This supply is decoupled from your account balance. Whether your balance is positive, zero, or negative, the survival baseline remains open.
 
-·Layer 1 (Experience Market): A free market powered by DemandCoin for high-tier aesthetics, scarce resources, and personalized experiences.
+    ·Layer 1 (Experience Market): A free market powered by DemandCoin for high-tier aesthetics, scarce resources, and personalized experiences.
 
-·Evolutionary Logic: As collective productivity increases, Layer 0 continuously upgrades. Today’s luxury becomes tomorrow’s fundamental right.
+    ·Evolutionary Logic: As collective productivity increases, Layer 0 continuously upgrades. Today’s luxury becomes tomorrow’s fundamental right.
 
 
 3. 恢复性正义 (Restorative Justice)
 “不为惩罚而生，只为修复而来。” AEP 彻底抛弃了报复性的惩罚制度。当损害发生时：
 
-系统启动因果回溯，锁定责任权重。
+    ·系统启动因果回溯，锁定责任权重。
 
-责任人的任务列表将优先显示“补救项目”。
+    ·责任人的任务列表将优先显示“补救项目”。
 
-目标是修复物理世界的损害，并恢复个体的公共参与能力。
+    ·目标是修复物理世界的损害，并恢复个体的公共参与能力。
 
 
 3. Restorative Justice
 "Not for Punishment, but for Restoration." AEP moves beyond retributive systems. When harm occurs:
 
-·The system triggers a causal traceback to determine liability weights.
+    ·The system triggers a causal traceback to determine liability weights.
 
-·The responsible party’s task list prioritizes "Remediation Projects."
+    ·The responsible party’s task list prioritizes "Remediation Projects."
 
-·The goal is to repair physical damage and restore the individual's capacity to contribute.
+    ·The goal is to repair physical damage and restore the individual's capacity to contribute.
 
 
 🚀 核心技术特性
