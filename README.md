@@ -161,8 +161,7 @@ We invite developers, economists, philosophers, and citizens of the future to pa
 <br>
 <br>
 ⚖️ 存证与版权 (Provenance)
-Document Hash (SHA-256): 2fb5277c8c00b20bc185922a281c11c443d5d01d60aae9fcb0da5d5c6b3a2ca9
+Document Hash (SHA-256): 139195cd69b1f08d1f51abc97db1ff33b5063b3abbc6e5ac9959f20824537e02
 
-Bitcoin Anchor Block: 936052
 
-Genesis Author: 潘正阳 (Zhengyang Pan) | 一根大萝卜（Bigradish）
+Genesis Author: 潘正阳 (Zhengyang Pan) | 一根大萝卜（BBBigradish）
