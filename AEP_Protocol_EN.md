@@ -1810,10 +1810,10 @@ Any derivative text or system implementation claiming to be “based on the AEP 
 <br>&nbsp;<br>
 <br>&nbsp;<br>
 [ 协议权属与存证标识 / Protocol Ownership & Provenance ]
-创世作者 | Genesis Author ：潘正阳 (Pan Zhengyang) | 一根大萝卜 (Bigradish)
+创世作者 | Genesis Author ：潘正阳 (Pan Zhengyang) | 一根大萝卜 (BBBigradish)
 <br>&nbsp;<br>
-存证时间 |Timestamp: 2026-02-11
+存证时间 |Timestamp: 2026-02-16
 <br>&nbsp;<br>
-文档完整性哈希 | Document Integrity Hash (SHA-256) ：[2fb5277c8c00b20bc185922a281c11c443d5d01d60aae9fcb0da5d5c6b3a2ca9]
+文档完整性哈希 | Document Integrity Hash (SHA-256) ：[139195cd69b1f08d1f51abc97db1ff33b5063b3abbc6e5ac9959f20824537e02]
 <br>&nbsp;<br>
 版本存证说明 | Version Statement 本文件为AEP Protocol v1.0 - Genesis Release AEP 协议 v1.0 - 创世发布版。其逻辑主权由创世作者通过上述数字指纹锁定，其内容完整性由存证哈希锚定于因果账本之始。
