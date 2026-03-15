@@ -1,3 +1,31 @@
+# AEP / PSA Spec
+<br>&nbsp;<br>
+**Current Version:** v1.1  
+**Release Date:** 2026-03-15  
+**Change Type:** Added  
+**Status:** Forward-only, non-retroactive
+<br>&nbsp;<br>
+## Update Summary (v1.1)
+This release adds **Section 3.0 Value Anchoring: SU (Survival Unit) and Redemption Guardrails (Constitutional Anchor)**.
+<br>&nbsp;<br>
+### Added
+- Added SU as the Layer 0 redeemable value anchor for demand currency.
+- Added SU composition across staple, protein, drinking water, hygiene, and micronutrients.
+- Added divisible redemption rules for SU shares.
+- Added Base Quota / Over-Quota structure.
+- Added stockout audit trail, CoverageDays, and mode switching.
+- Added SU_NutritionSpec v1 and minimum hygiene/safety lines.
+- Added scarcity adjustment tax scope and emergency backstop.
+<br>&nbsp;<br>
+### Reader Note
+For the full normative text, see **Section 3.0 – 3.0.13** below.
+
+<br>&nbsp;<br>
+<br>&nbsp;<br>
+<br>&nbsp;<br>
+<br>&nbsp;<br>
+
+
 Chapter 1 | Manifesto
 
 The AEP protocol is built on a long-ignored yet undeniably real fact: life is not separate. You are me, and I am you; your happiness becomes my happiness, and your pain becomes my pain.
