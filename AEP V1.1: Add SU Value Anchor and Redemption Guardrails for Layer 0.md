@@ -1,4 +1,4 @@
-# AEP / PSA Spec
+# AEP Spec
 <br>&nbsp;<br>
 **Current Version:** v1.1  
 **Release Date:** 2026-03-15  
