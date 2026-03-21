@@ -1,4 +1,4 @@
-© 2026 [潘正阳（Zhengyang Pan）] | 本项目（AEP & PSA-1）受 CC BY-NC-ND 4.0 保护，禁止商用及修改发布。
+© 2026 [潘正阳（Zhengyang Pan）I 一根大萝卜（BBBigradish）] | 本项目（AEP & PSA-1）受 CC BY-NC-ND 4.0 保护，禁止商用及修改发布。
 <br>
 # Act-Energy-Public
 
