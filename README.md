@@ -1,3 +1,5 @@
+© 2026 [你的名字] | 本项目（AEP & PSA-1）受 CC BY-NC-ND 4.0 保护，禁止商用及修改发布。
+<br>
 # Act-Energy-Public
 
 AEP (Act–Energy–Public) Protocol v1.0 - A Transitionary Framework for Civilizational Governance.
