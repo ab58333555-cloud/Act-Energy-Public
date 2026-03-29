@@ -1,0 +1,466 @@
+PSA-3｜两段式审计与全流程留痕（Two-Stage Audit with On-chain Trail）🧾⛓️
+目的：在发放前完成两段审计：
+(1) PSA-1 服务行为真实性/有效性确认；
+(2) PSA-2 结算口径/计算依赖复核；
+并把“审计过程”全程上链留痕（可复盘、可追责、可统计），输出 payout_gate 给发放层与 PSA-2 引用。
+
+边界（MUST）：
+- PSA-3 不新增事实字段；事实来自 PSA-1，结算与口径指针来自 PSA-2。
+- PSA-3 只做复核、判级、升级审计与闸门输出；不得在 PSA-3 引入“解释性结论正文”替代链上证据承诺。
+
+------------------------------------------------------------
+0. 输入锚点（MUST）
+0.1 PSA-1 输入（事实源）
+- anti_replay_key（主键）
+- PSA-1 事实事件引用：ServiceSubmitted / ServiceConfirmed / proof_schema 输出字段引用（points_count/captured_count/sampling_compliance_status 等）
+- evidence_bundle_hash（证据封包承诺）
+
+0.2 PSA-2 输入（结算源）
+- settlement_id（封账ID）
+- settlement_input_pointer_set + settlement_input_pointer_set_hash（当期指针集合与哈希）
+- lineitem_proof_ref（证明 anti_replay_key 属于 settlement_lineitem_root 的证明）
+- refs_used_digest / amount_commit_hash（关键引用摘要与金额承诺）
+
+0.3 项目等级与默认审计模式输入
+- project_grade ∈ {GLOBAL, NATIONAL, PROVINCIAL, CITY, DISTRICT, GRID, POINT}
+- project_grade 来源必须可追溯到 ProjectSpec/Registry（引用化）。
+
+------------------------------------------------------------
+1. 审计状态机（MUST）🧩
+定义每个 anti_replay_key 的审计状态：
+audit_state ∈ {
+OPENED,
+STAGE1_RUNNING, STAGE1_NEEDS_HUMAN, STAGE1_PASSED, STAGE1_FAILED,
+STAGE2_RUNNING, STAGE2_NEEDS_HUMAN, STAGE2_PASSED, STAGE2_FAILED,
+GATE_ISSUED,
+CLOSED
+}
+
+约束（MUST）：
+- 任一状态迁移必须上链事件记录；
+- 同一 anti_replay_key 在同一 epoch 内不得出现“跳跃式”越级迁移（除非 policy 明确允许并留痕）。
+
+------------------------------------------------------------
+2. 审计会话与开案（MUST）📌
+每次审计以 audit_session_id 标识（可复盘到输入快照）：
+audit_session_id = H(anti_replay_key, epoch_id, settlement_id, settlement_input_pointer_set_hash, nonce)
+
+事件（MUST）：
+- AuditSessionOpened(
+audit_session_id,
+anti_replay_key,
+epoch_id,
+project_grade,
+settlement_id,
+settlement_input_pointer_set_hash,
+evidence_bundle_hash,
+ts
+)
+- AuditStateUpdated(audit_session_id, from_state, to_state, reason_code, ts)
+
+说明：
+- 开案后即进入 STAGE1_RUNNING。
+
+------------------------------------------------------------
+3. 第一段审计：PSA-1 真实性/有效性确认（MUST）✅
+目标：确认“是否真实完成、证据是否可用、结果是否有效”。
+
+3.1 审计模式分流（MUST）
+- 若 project_grade < DISTRICT：默认 review_mode = AI_ONLY；
+仅当 AI 输出 UNCLEAR/ANOMALY/冲突 才允许升级人工。
+- 若 project_grade ≥ DISTRICT：review_mode = AI_PLUS_HUMAN。
+
+事件（MUST）：
+- Stage1Started(audit_session_id, review_mode, policy_refs_digest, ts)
+
+3.2 Stage1 检查项（结构化接口，细则引用化）
+Stage1 对 PSA-1 分三类检查（每类必须产出状态并留痕）：
+
+(A) 随机采样照片检查
+- sampling_photo_check_policy_ref（必填）
+输出：
+sample_photo_status ∈ {PASS, FAIL, UNCLEAR}
+
+(B) 完成证据检查（完成照片/完成视频/全景图）
+- finish_evidence_check_policy_ref（必填）
+输出：
+finish_evidence_status ∈ {PASS, FAIL, UNCLEAR}
+
+(C) 实际结果检查（Outcome）
+- outcome_check_policy_ref（必填）
+输出：
+outcome_status ∈ {PASS, FAIL, UNCLEAR}
+
+过程事件（MUST，逐项留痕）：
+- EvidenceCheckPerformed(
+audit_session_id,
+check_type ∈ {SAMPLE_PHOTO, FINISH_EVIDENCE, OUTCOME},
+status ∈ {PASS, FAIL, UNCLEAR},
+policy_ref,
+input_ref_digest, // 指向 PSA-1 proof_schema/事件字段的摘要
+evidence_ref_optional, // 可选：指向子证据集合承诺
+ts
+)
+
+3.3 Stage1 升级人工审计（MUST，按等级约束）
+触发条件（最小口径，MUST）：
+- project_grade < DISTRICT 且任一检查出现 UNCLEAR 或出现冲突/异常 → 进入 STAGE1_NEEDS_HUMAN
+- project_grade ≥ DISTRICT 默认 AI_PLUS_HUMAN，不需要此触发
+
+事件（MUST）：
+- HumanReviewRequested(
+audit_session_id,
+stage=1,
+reason_code,
+required_inputs_ref_optional,
+ts
+)
+- AuditStateUpdated(audit_session_id, STAGE1_RUNNING, STAGE1_NEEDS_HUMAN, reason_code, ts)
+
+3.4 Stage1 判级与输出（MUST）
+audit_grade_stage1 ∈ {COMPLIANT, SUSPICIOUS, ANOMALY, INVALID}
+
+最小判级口径（MUST）：
+- 任一 FAIL：
+- 若可补救（由 policy 决定）→ ANOMALY（需人工/补证）
+- 若不可补救 → INVALID
+- 存在 UNCLEAR → SUSPICIOUS（并可触发人工）
+- 全部 PASS 且无冲突 → COMPLIANT
+
+事件（MUST）：
+- Stage1GradeIssued(
+audit_session_id,
+audit_grade_stage1,
+sample_photo_status,
+finish_evidence_status,
+outcome_status,
+policy_refs = {
+sampling_photo_check_policy_ref,
+finish_evidence_check_policy_ref,
+outcome_check_policy_ref
+},
+reason_code,
+ts
+)
+
+状态迁移（MUST）：
+- 若 audit_grade_stage1 == COMPLIANT → STAGE1_PASSED
+- 若 audit_grade_stage1 ∈ {SUSPICIOUS, ANOMALY} → STAGE1_NEEDS_HUMAN 或保持 STAGE1_RUNNING 等待后续（由 policy 决定，但必须留痕）
+- 若 audit_grade_stage1 == INVALID → STAGE1_FAILED
+
+事件（MUST）：
+- AuditStateUpdated(audit_session_id, *, STAGE1_PASSED|STAGE1_FAILED|STAGE1_NEEDS_HUMAN, reason_code, ts)
+
+------------------------------------------------------------
+4. 第二段审计：PSA-2 结算口径/计算依赖复核（MUST）🧮
+进入条件（MUST）：
+- 仅当 STAGE1_PASSED 才能进入 STAGE2_RUNNING。
+
+事件（MUST）：
+- Stage2Started(audit_session_id, policy_refs_digest, ts)
+- AuditStateUpdated(audit_session_id, STAGE1_PASSED, STAGE2_RUNNING, reason_code=STAGE1_OK, ts)
+
+4.1 计算依赖（Settlement Dependencies）定义（MUST）
+计算依赖 = PSA-2 计算所引用的一切口径/模型/数据/因子/版本/指针集合。
+PSA-3 必须复核“是否与实际相符、是否与封账指针一致”。
+
+依赖项（启用则 MUST 审计）：
+- reward_model_id / amount_calc_policy_ref
+- oracle_set_hash（或 OracleSetSpec 指针）
+- share_root_ref / sector_weight_ref / baseline_ref / benefit_anchor_set_ref / benefit_measure_oracle_ref
+- 工作差异画像/因子（按现实持续迭代，引用化）：
+work_profile_ref（工种/作业画像）
+intensity_profile_ref（强度画像）
+difficulty_profile_ref（难度画像）
+risk_factor_ref（危险度）
+professionalism_profile_ref（专业要求程度）
+non_interruptible_profile_ref（不可中断性）
+duration_profile_ref（持续时间/工时口径）
+factor_composition_policy_ref（因子组合策略）
+
+4.2 指针集合一致性校验（MUST）
+目标：防止“结算时私自换口径”。
+
+过程事件（MUST）：
+- SettlementPointerSetVerified(
+audit_session_id,
+settlement_input_pointer_set_hash,
+refs_used_digest,
+verification_result ∈ {PASS, FAIL, UNCLEAR},
+reason_code,
+ts
+)
+
+4.3 依赖相符性复核（MUST，细则引用化）
+- dependency_audit_policy_ref（必填）：定义如何判断“依赖是否与现实相符/正确”（只引用，不写死阈值）
+输出：
+dependency_audit_status ∈ {PASS, FAIL, UNCLEAR}
+
+过程事件（MUST）：
+- DependencyCheckPerformed(
+audit_session_id,
+dependency_group ∈ {MODEL, ORACLE, SHARE, BASELINE, BENEFIT, WORK_FACTORS, OTHER},
+status ∈ {PASS, FAIL, UNCLEAR},
+policy_ref=dependency_audit_policy_ref,
+checked_refs_digest, // 本次核验涉及的 ref 摘要
+evidence_ref_optional, // 可选：核验材料承诺
+ts
+)
+
+4.4 Stage2 判级与输出（MUST）
+audit_grade_stage2 ∈ {COMPLIANT, SUSPICIOUS, ANOMALY, INVALID}
+
+最小判级口径（MUST）：
+- pointer_set_verification_result == FAIL → ANOMALY（至少延后）
+- dependency_audit_status == FAIL：
+- 可纠正（由 policy 定义）→ ANOMALY
+- 不可纠正 → INVALID
+- 存在 UNCLEAR → SUSPICIOUS
+- PASS 且一致 → COMPLIANT
+
+事件（MUST）：
+- Stage2GradeIssued(
+audit_session_id,
+audit_grade_stage2,
+pointer_set_verification_result,
+dependency_audit_status,
+policy_refs = { dependency_audit_policy_ref },
+reason_code,
+ts
+)
+
+状态迁移（MUST）：
+- COMPLIANT → STAGE2_PASSED
+- INVALID → STAGE2_FAILED
+- SUSPICIOUS/ANOMALY → STAGE2_NEEDS_HUMAN 或保持等待（由 policy 决定，但必须留痕）
+
+事件（MUST）：
+- AuditStateUpdated(audit_session_id, *, STAGE2_PASSED|STAGE2_FAILED|STAGE2_NEEDS_HUMAN, reason_code, ts)
+
+------------------------------------------------------------
+5. 综合裁决：发放闸门输出（MUST）🚦
+payout_gate_status ∈ {PAYOUT_ALLOWED, PAYOUT_DELAYED, PAYOUT_BLOCKED}
+
+最小规则（MUST）：
+- 若 STAGE1_FAILED 或 STAGE2_FAILED → PAYOUT_BLOCKED
+- 若存在 NEEDS_HUMAN / UNCLEAR / ANOMALY 未闭环 → PAYOUT_DELAYED
+- 仅当 STAGE1_PASSED 且 STAGE2_PASSED 且无 Dispute/Hold/AuditOpen 阻断 → PAYOUT_ALLOWED
+
+事件（MUST，上链可复盘）：
+- PayoutGateIssued(
+audit_session_id,
+anti_replay_key,
+epoch_id,
+settlement_id,
+status=payout_gate_status,
+reason_code,
+stage1_grade=audit_grade_stage1,
+stage2_grade=audit_grade_stage2,
+policy_refs_digest,
+ts
+)
+- AuditStateUpdated(audit_session_id, *, GATE_ISSUED, reason_code, ts)
+
+------------------------------------------------------------
+6. 关案与引用输出（MUST）🔚
+- AuditSessionClosed(audit_session_id, final_status=payout_gate_status, ts)
+- AuditStateUpdated(audit_session_id, GATE_ISSUED, CLOSED, reason_code, ts)
+
+接口约束（MUST）：
+- PSA-3 输出的 payout_gate_ref（指向 PayoutGateIssued 事件/对象）为发放的必要条件；
+- 若 status 为 DELAYED/BLOCKED，任何发放模块 MUST 禁止发放（宁可慢，不可错发）。
+
+------------------------------------------------------------
+7. 与 PSA-2 / ServiceCard 的边界对齐（MUST）📇
+- PSA-2 在封账时 MUST 引用 payout_gate_ref（来自 PSA-3），用于复盘“为何放/为何延后/为何阻断”。
+- ServiceCard 只索引：psa1_fact_ref / lineitem_proof_ref / psa3_audit_ref(payout_gate_ref)；
+MUST NOT 把 PSA-3 的人工结论正文塞回 PSA-2 或 ServiceCard（只允许 ref/hash/proof）。
+
+
+8.Human Review (Maintainer Jury)｜人工审计（维护者陪审团）🗳️🧑‍⚖️（MUST，上链公开）
+目的：当 AI 无法清晰判定、或出现异常/争议时，由“对该项目负有维护义务”的系统维护者集合进行抽选与投票，
+对服务行为真实性/有效性（PSA-1侧）与结算依赖正确性（PSA-2侧）做人工复核，并输出最终裁决与发放闸门。
+
+本章只定义：抽选规则、投票规则、权重、阈值、上链事件、以及裁决后的分流处置。
+具体“照片/全景/结果判定细则”属于实现细则，可由 evidence_review_policy_ref 版本化引用。
+
+8.0 引用与版本化绑定（MUST, ref-only）
+- human_review_process_ref：人工审计流程引用（本章的 {doc_hash, section_path, version, effective_epoch}）
+- vote_rule_ref：投票规则引用（阈值/权重/计票口径/无效票处理；版本化）
+- maintainer_registry_ref：维护者登记与义务映射引用（谁对哪个 scope/domain 有维护义务；版本化）
+- selection_policy_ref：抽选规则引用（抽样比例/最小人数/补位规则/随机性证明；版本化）
+- higher_level_policy_ref：高一级维护者参与规则引用（适用范围/人数上限/资格；版本化）
+- evidence_review_policy_ref（optional）：证据审阅方法引用（随机采样照片、完成照片、结果判定等细则；版本化）
+- remediation_policy_ref（optional）：不通过后的处置策略引用（挂起/冻结/回退PSA-1补证/更正PSA-2依赖；版本化）
+约束（MUST）：以上引用在项目版本激活时锁定；升级必须 version+1 且 forward-only（仅后续 epoch 生效）。
+
+8.1 触发条件（MUST）
+满足任一即进入人工审计：
+- AI 判级输出为 ANOMALY / 或识别不清 / 或触发人工复核门槛（由 PSA-3 主干定义）
+- Dispute/Hold/AuditOpen 等治理状态要求人工介入（由 governance_ruleset_hash / freeze_policy 定义）
+事件（MUST）：
+- HumanAuditOpened(audit_id, scope, anti_replay_key_or_project_id, epoch_id, trigger_reason_code, refs_digest, ts)
+
+8.2 审计对象与审计范围（MUST）
+人工审计至少覆盖两段（可分别开子审计）：
+Stage1：PSA-1 服务行为真实性/有效性复核（服务是否真的完成、证据是否可信、项目信息是否对应）
+Stage2：PSA-2 结算依赖复核（模型版本、数据来源、占比、工种/强度/难度/危险度/不可中断性/专业要求/持续时间等依赖是否与实际一致）
+
+字段（MUST）：
+- audit_stage ∈ {STAGE1_PSA1_FACT, STAGE2_PSA2_DEPENDENCY, BOTH}
+- psa1_ref_bundle：PSA-1 事实/证据引用集合（ServiceSubmitted/Confirmed + evidence_bundle_hash + proof_schema outputs）
+- psa2_calc_ref_bundle：PSA-2 计算结果与口径引用集合（settlement_lineitem proof + refs_used_digest + settlement_input_pointer_set_hash）
+约束（MUST）：人工审计只复核“引用/事实/口径是否匹配与合理”，不得在 PSA-3 新增事实字段。
+
+8.3 维护者集合与抽选（MUST）
+8.3.1 本级维护者集合（MUST）
+- MaintainerSet_local = Maintainers(scope=project.location, domain=project.domain, grade=project_grade) 由 maintainer_registry_ref 决定。
+
+8.3.2 抽选人数规则（MUST）
+从 MaintainerSet_local 中抽选：
+- n_total = |MaintainerSet_local|
+- n_pick_raw = round(0.4 * n_total) （四舍五入）
+- n_pick = max(3, n_pick_raw) （最少不得少于 3 人）
+事件（MUST）：
+- MaintainerPanelSelectionRequested(audit_id, n_total, n_pick, selection_policy_ref, ts)
+
+8.3.3 不足补位（MUST）
+若 MaintainerSet_local 不足以满足 n_pick：
+- 从 SameTypeSameGradePool = Maintainers(domain=project.domain, grade=project_grade) 中补充抽取，
+直到满足 n_pick 或触发“无法满足最小人数”异常（由 selection_policy_ref 定义）。
+事件（MUST）：
+- MaintainerPanelSupplemented(audit_id, shortage_count, supplement_pool_ref, ts)
+
+8.3.4 DISTRICT 及以上引入高一级维护者（MUST）
+若 project_grade ∈ {DISTRICT, CITY, PROVINCIAL, NATIONAL, GLOBAL}：
+- 从更高一级维护者集合 MaintainerSet_higher 中抽取高一级参与者：
+- n_higher_min = 1
+- n_higher_max = floor(n_pick / 10) （不得多于本级参与人数的十分之一）
+- n_higher = clamp( round(rule_defined), n_higher_min, n_higher_max ) 具体由 higher_level_policy_ref 决定
+若不存在高一级维护者：按“无高一级参与”规则计权（见 8.5）。
+事件（MUST）：
+- HigherLevelMaintainerInvited(audit_id, n_higher, higher_level_policy_ref, ts)
+
+8.3.5 抽选可验证性（MUST）
+抽选必须可审计：包含随机性来源与证明（不要求公开随机种子明文，但需可验证承诺）。
+字段（MUST）：
+- selection_proof_ref（随机抽选证明引用）
+- panel_members_hash（成员列表承诺哈希）
+事件（MUST）：
+- MaintainerPanelSelected(audit_id, panel_members_hash, selection_proof_ref, ts)
+
+8.4 投票机制（MUST）
+8.4.1 投票选项与理由要求（MUST）
+每位参与审计的维护者必须投票：
+- vote ∈ {ACCEPT, REJECT}
+- vote_reason_ref（必填）：理由必须写明，并上链公开（可用结构化 reason_code + 文本摘要的哈希/正文）
+说明：理由必须可复盘；不得“无理由通过/无理由否决”。
+
+事件（MUST）：
+- VoteCast(audit_id, voter_ref, vote, vote_reason_ref, ts)
+
+8.4.2 讨论/主张（MUST）
+任一维护者可提出审计主张与分析，可单独或联合提出，以争取引导投票走向。
+事件（MUST, optional but recommended）：
+- AuditArgumentSubmitted(audit_id, proposer_ref, argument_ref, ts)
+
+8.5 计票权重与通过阈值（MUST）
+X.5.1 基础阈值（MUST）
+- pass_threshold = > 2/3 （严格大于 2/3）
+- 计票规则由 vote_rule_ref 定义并版本化锁定（不得事后改）。
+
+8.5.2 无高一级维护者参与（MUST）
+若 n_higher == 0：
+- 每位参与者权重均摊：w_i = 1 / n_pick
+- weighted_accept = Σ(w_i for vote==ACCEPT)
+- 若 weighted_accept > 2/3 => ACCEPT，否则 REJECT
+
+8.5.3 有高一级维护者参与（MUST）
+若 n_higher >= 1：
+- 高一级组权重：W_higher = 0.26
+- 本级组权重：W_local = 0.74
+- 组内均摊：
+- 每位高一级权重：w_higher_i = W_higher / n_higher
+- 每位本级权重：w_local_i = W_local / n_local
+- weighted_accept = Σ(w_higher_i for higher votes==ACCEPT) + Σ(w_local_i for local votes==ACCEPT)
+- 若 weighted_accept > 2/3 => ACCEPT，否则 REJECT
+说明：0.26/0.74 为本章硬规则；若你未来要升级为可调参数，可把它挪进 vote_rule_ref，但仍需版本化与 forward-only。
+
+8.5.4 输出裁决（MUST）
+事件（MUST，上链公开）：
+- VoteClosed(audit_id, vote_stats_hash, ts)
+- HumanAuditVerdictCommitted(
+audit_id,
+outcome ∈ {ACCEPT, REJECT},
+weighted_accept,
+vote_stats_hash,
+evidence_bundle_hash,
+refs_digest,
+ts
+)
+
+8.6 全流程上链公开（MUST）
+硬规则（MUST）：人工审计的过程与结果必须上链公开（包括：抽选、成员承诺、投票、理由引用、统计摘要、裁决）。
+最小必须上链事件集合（MUST）：
+- HumanAuditOpened(...)
+- MaintainerPanelSelected(...)
+- VoteCast(...)+vote_reason_ref
+- VoteClosed(...)
+- HumanAuditVerdictCommitted(...)
+注：参与者身份可按系统策略选择实名/匿名承诺，但你这里要求“公开”，则默认公开；若未来要隐私，可在 registry 层扩展。
+
+8.7 裁决后的分流处置（MUST）
+8.7.1 裁决 ACCEPT（通过）✅
+动作（MUST）：
+- 输出发放闸门：payout_gate_status = PAYOUT_ALLOWED
+- 将 PSA-1 + PSA-2 + PSA-3 串联封包为“服务卡片”（ServiceCard）
+- 复用 PSA-2 的 ServiceCard 规则：只索引、不裁判、不新增事实
+事件（MUST）：
+- PayoutGateIssued(anti_replay_key, epoch_id, PAYOUT_ALLOWED, reason_code=HUMAN_AUDIT_ACCEPT, audit_ref=audit_id)
+- ServiceCardFinalized(service_card_id, anti_replay_key, psa1_ref, psa2_ref, psa3_audit_ref=audit_id, ts)
+约束（MUST）：ServiceCardFinalized 之后，进入铸币发放流程（铸币/发钱在执行层实现，但闸门必须先允许）。
+
+8.7.2 裁决 REJECT（不通过）❌
+动作（MUST）：必须写明理由，并按问题归因分流处理：
+- reject_reason_ref（必填）：不通过理由引用（结构化 reason_code + 说明）
+
+8.7.2.1 问题在 PSA-1（服务行为真实性/有效性问题）
+处理规则（MUST）：
+- 若已超过“工作开放时间窗口”（work_window_ref / work_open_policy_ref 定义）：
+- 冻结项目（FreezeProject），由服务者继续持有任务，待其选择的工作开始时间后继续补齐 PSA-1 要求
+- 但“总持有任务时间”上限：MAX_HOLD = 72 小时（硬上限）
+- 服务者可选择 work_start_time（避免工作开放时间自动开始导致不在场）
+- 若未超过工作开放时间窗口：
+- 暂时挂起（Hold），要求服务者处理相应问题；若随后超过窗口则转冻结（同上）
+
+事件（MUST）：
+- ServiceRejected_PSA1(audit_id, anti_replay_key, reject_reason_ref, ts)
+- TaskHeld(anti_replay_key, reason_code, until_ts_optional, ts)
+- ProjectFrozen(project_id, scope, reason_code=PSA1_REWORK_REQUIRED, evidence_ref=reject_reason_ref, ts)
+- WorkerWorkStartDeclared(anti_replay_key, chosen_start_time, ts) （服务者选择开始时间）
+- HoldExceededToFreeze(anti_replay_key, ts) （超过窗口转冻结）
+- TaskHoldReleasedOrExpired(anti_replay_key, reason_code, ts) （达到72h上限或人工释放）
+
+硬约束（MUST）：
+- 任一 anti_replay_key 的持有/冻结累计时长不得超过 72 小时；超过则必须释放/重置流程（由 remediation_policy_ref 定义）。
+
+8.7.2.2 问题在 PSA-2（计算依赖/版本/数据来源不正确）
+处理规则（MUST）：
+- 暂时挂起（Hold），获取正确的计算依赖后立即重新计算报酬
+- 同时向系统发起“修正项目报酬计算依赖至正确版本”的请求（version+1，forward-only）
+- 注意：历史封账不可改字，只能以 addendum 加注正确引用（PSA-2 规则）
+
+事件（MUST）：
+- ServiceRejected_PSA2(audit_id, anti_replay_key, reject_reason_ref, ts)
+- PayoutGateIssued(anti_replay_key, epoch_id, PAYOUT_DELAYED, reason_code=PSA2_DEPENDENCY_MISMATCH, audit_ref=audit_id)
+- DependencyCorrectionRequested(project_id, from_refs_digest, to_refs_digest, reason_ref, ts)
+- RecomputeRequested(anti_replay_key, correct_refs_digest, ts)
+- SettlementAmendment(addendum_id, settlement_id, reason_code=DEPENDENCY_CORRECTED, new_refs, ts, sig) （由 PSA-2 层落地）
+
+8.8 发放闸门联动（MUST）
+- 若 HumanAuditVerdictCommitted.outcome == ACCEPT -> PAYOUT_ALLOWED
+- 若 outcome == REJECT -> 至少 PAYOUT_DELAYED；如判定不可修复或作废 -> PAYOUT_BLOCKED（由 remediation_policy_ref 定义）
+- 任一 Dispute/Hold/AuditOpen 状态下，闸门必须 BLOCKED 或 DELAYED（宁可慢，不可错发）。
+
+
+作者：潘正阳（Zhengyang Pan）｜一根大萝卜（BBBigradish）
