@@ -1,0 +1,217 @@
+PSA-2｜结算/记账层：报酬计算输入、周期记账、动态因子、铸币公式 📦
+PSA-2 只干一件事：把 PSA-1 确认的工作事实，算出对应的需求币报酬，并封账记录。 PSA-2 不验证事实（那是 PSA-1 的事），不发钱（那是 PSA-3 的事），不裁判争议（那是 PSA-3 的事）。
+【全局约定】
+PSA-2 不新增任何事实字段；所有可结算事实唯一来源于 PSA-1 已上链事件。
+PSA-2 不写死任何数值、阈值或公式；所有计算参数以 *_ref 引用外部版本化模型/数据。
+所有引用必须具备 {doc_hash, version, effective_epoch}，变更须 version+1，forward-only 生效。
+封账一旦 Finalized，任何字段不可修改；后续只能以 addendum 方式追加说明。
+SU（生存单元）= 一个成年男子一天最低限度健康生存所需（主食+蛋白质+微量元素+水+卫生品）；SU 仅作为需求币的价值锚定基准，用于条目11货币胀缩率的计算，不代表物资直接发放。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━           1.结算输入锚点：严格以 PSA-1 事件事实为唯一来源
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+PSA-2 不新增事实字段，仅定义结算/记账输入的引用绑定、口径锁定与计算接口。 所有可用于结算的事实输入 MUST 来自 PSA-1-lite 已上链事件及其可验证字段，包括但不限于：
+·ServiceSubmitted(project_id, version, service_tag, evidence_bundle_hash, participant_ref, root_id, lease_id, time_completed, ...) ·ServiceConfirmed(project_id, version, service_tag, verifier_id, result=ACCEPT, ...) ·PSA-1 输出的 points_count / captured_count / missing_count / sampling_commit_hash / sampling_compliance_status 等事实字段。
+约束（MUST）：任何计账记录的对象 MUST 为 PSA-1 已确认事件 ServiceConfirmed(..., result=ACCEPT) 所指向的 anti_replay_key；未确认不得记账。
+1.1 结算聚合主键（MUST 与 PSA-1 对齐）
+结算聚合、去重与计账对象定位 MUST 与 PSA-1 的 anti_replay_policy_ref 保持一致：
+anti_replay_key = H(project_id, version, service_type_id, canonical_target_ref_hash, unit_serial) canonical_target_ref_hash = H(canonical_target_ref canonicalized)，至少包含：anchor_type、anchor_id、target_slot，并受 gateway_map_policy_ref 的 Canonical 规则约束。
+约束： ·service_tag / evidence_bundle_hash 仅作为索引与审计锚，不得替代 anti_replay_key。 ·location_key 默认不参与 anti_replay_key/结算主键。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2. 报酬计算 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+当服务单元被 PSA-1 的 ConfirmService 确认有效（ServiceConfirmed ... ACCEPT）时，结算模块方可对该服务单元执行计账。
+2.1 报酬计算条目（12条，全部为预留接口） 
+PSA-2 定义以下12个计算条目作为报酬计算的完整输入结构。所有条目均为接口占位，数值与计算方法由对应工作类型的版本化计算模型提供；PSA-2 不写死任何数值或公式。
+条目1：最低报酬（minimum_reward_ref） ·定义：该工作类型在当前版本下的最低报酬兜底值。 ·规则：独立存在，不参与系数乘算，不进入基础报酬计算链。最终报酬 = max(最低报酬, 系数乘算结果)。
+条目2：工作类型（service_type_factor_ref） ·定义：决定本次工作适用哪套版本化计算数据的分类标识。 ·说明：不仅是工作的种类，还考虑工作发生的地点与该工作在当地的稀缺程度；不同地点、不同稀缺程度的同类工作使用不同版本化数据。 ·作用：决定条目3–12中哪些条目适用、各条目引用哪个版本的计算模型/数据。
+条目3：基础报酬（base_reward_ref） ·定义：该工作类型在正常情况下的标准报酬基准值，是后续所有系数的乘算基础。 ·规则：必须大于0；由工作类型（条目2）决定引用版本。
+条目4：强度系数（intensity_factor_ref） ·定义：该工作的体力/精力消耗程度对报酬的调整系数。 ·规则：最小值 = 1；越高强度系数越大。
+条目5：难度系数（difficulty_factor_ref） ·定义：该工作的操作难度对报酬的调整系数。 ·规则：最小值 = 1；越难系数越大。
+条目6：危险度系数（risk_factor_ref） ·定义：该工作对工作者人身安全的风险程度对报酬的调整系数。 ·规则：最小值 = 1；越危险系数越大。
+条目7：专业程度系数（skill_factor_ref） ·定义：该工作所需专业资质/技能门槛对报酬的调整系数。 ·规则：最小值 = 1；无专业要求的工作类型直接跳过本条目（系数视为1）；有要求则门槛越高系数越大。
+条目8：持续时间（duration_factor_ref） ·定义：工作持续时长对报酬的调整系数或乘算因子。 ·规则：仅适用于 completion_mode = FIXED_SERVICE_RESULT 的工作类型；completion_mode = RESULT_ACHIEVEMENT（结果达成式）的工作直接跳过本条目。
+条目9：归因系数（attribution_factor_ref） ·定义：预计效益与实际效益之间的偏差比例，衡量本次工作对系统实际产生的效益与预期的吻合程度。 ·计算方式：attribution_factor = 实际效益 / 预计效益（按百分比）；超额完成则系数 > 1，未达预期则系数 < 1。 ·说明：预计效益在项目立项时版本化锁定；实际效益由 PSA-3 在服务确认后输出并写入链上事实；PSA-2 引用 PSA-3 的实际效益输出作为本条目输入。 ·数据来源：attribution_factor_ref 引用预计效益版本化数据与 PSA-3 实际效益输出接口。
+条目10：需求度系数（demand_factor_ref） ·定义：该工作类型当前的社会需求程度对报酬的调整系数；需求越高系数越大，需求饱和后系数趋近于零。 ·说明：与边际系数（条目12）配合作用；需求度反映系统层面的整体需求状态，边际系数反映个体层面的边际贡献变化。 ·数据来源：demand_factor_ref 引用版本化需求度数据与饱和抑制函数。
+条目11：货币胀缩率（monetary_factor_ref） ·定义：当前需求币购买力变化对报酬的调整系数；通胀时向上调整，通缩时向下调整，保证报酬的实际购买力不因货币变化而失真。 ·说明：SU 作为需求币的价值锚定基准，货币胀缩率通过观测 SU 对应的实际物资价格变动来计算；不涉及物资直接发放。 ·数据来源：monetary_factor_ref 引用 SU_price_oracle（SU 对应物资价格观测数据）+ monetary_calibration_policy_ref（如何用价格观测数据计算胀缩率的规则）的联合输出。
+条目12：边际系数（marginal_factor_ref） ·定义：工作者在该工作类型上的累计经验/贡献量对其个人报酬的调整系数；分为边际递增与边际递减两种模式。 ·边际递增：适用于"经验积累能显著提升效益"的工作类型（如复杂机械操作、农田长期管理等）；做得越多，技能积累带来效益提升，系数随之上升。 ·边际递减：适用于"无技术积累效应、或个体长期占据岗位导致新人无法参与"的工作类型（如清洁、搬运、巡逻等）；做得越多，边际贡献递减，系数随之下降，以促使工作者腾出岗位。 ·规则：边际递增或递减的判断标准、系数计算方式、计算基准（按次数/时间/累计量等）均由工作类型的计算模型定义；PSA-2 预留接口，不写死任何具体规则。
+2.2 报酬计算公式骨架（MUST） 
+最终报酬 = max( minimum_reward, ← 条目1，独立兜底 base_reward ← 条目3 × intensity_factor ← 条目4 × difficulty_factor ← 条目5 × risk_factor ← 条目6 × skill_factor（如适用） ← 条目7 × duration_factor（如适用） ← 条目8 × attribution_factor ← 条目9 × demand_factor ← 条目10 × monetary_factor ← 条目11 × marginal_factor ← 条目12 )
+约束（MUST）： ·工作类型（条目2）决定各条目适用性与引用的版本化数据；不适用的条目（7、8）视为系数=1直接跳过。 ·最低报酬（条目1）独立兜底，不进入乘算链。 ·条目4–7 最小值约束（≥1）由各 *_factor_ref 的计算模型保证。 ·条目9（归因系数）依赖 PSA-3 输出的实际效益；若 PSA-3 数据尚未到达，封账状态标记为 PARTIAL，等待补齐。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3. 结算依赖最小目录（MUST） ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+D1. 事实唯一来源
+任何可结算对象 MUST 指向 PSA-1 的 ServiceConfirmed(..., result=ACCEPT) 所对应 anti_replay_key。
+PSA-2 MUST NOT 引入任何新增事实字段。
+事实筛选条件 MUST 以 confirmed_event_set_ref 承诺化绑定并写入封账。
+D2. 主键对齐与去重
+结算聚合主键 MUST 与 PSA-1 anti_replay_policy_ref 完全一致；不得自创替代主键。
+纳入集合 MUST 提供 anti_replay_key_set_root（Merkle root 或等价承诺）用于去重与复盘。
+D3. 规范化绑定
+canonical_target_ref_hash 的 canonical 规则 MUST 引用 gateway_map_policy_ref。
+若某些 service_type 需要叠加字段参与 anti_replay_key，必须由 anti_replay_policy_ref 显式声明并版本化。
+D4. 参数只允许引用化进入
+2.1 的12个计算条目引用，以及 reward_model_id / share_root_ref / sector_weight_ref / baseline_ref 等结算依赖 MUST 以引用方式进入封账。
+每个 ref MUST 具备 {doc_hash, version, effective_epoch}。
+D5. 当期指针集合完备性
+每期封账 MUST 写入 settlement_input_pointer_set 并提供其 hash： settlement_input_pointer_set_hash = H(canonicalized(settlement_input_pointer_set))
+settlement_input_pointer_set 至少包含： epoch_spec_ref ── 报酬计算条目引用（全部 MUST if used）── minimum_reward_ref service_type_factor_ref base_reward_ref intensity_factor_ref difficulty_factor_ref risk_factor_ref skill_factor_ref（optional, if applicable） duration_factor_ref（optional, if applicable） attribution_factor_ref demand_factor_ref monetary_factor_ref（含 SU_price_oracle + monetary_calibration_policy_ref） marginal_factor_ref ── 其他可选 ── oracle_set_hash（optional, if used） sector_weight_ref（optional, if used） share_root_ref（optional, if used） benefit_anchor_set_ref / benefit_measure_oracle_ref（optional, if used） baseline_ref / aggregation_policy_ref（optional, if used） compensation_topup_policy_ref / tail_comp_policy_ref（optional, if used） reward_model_id payout_gate_ref（必填，见 D9） amount_calc_policy_ref（MUST if any factor used）
+D6. 前向生效与版本锁定
+任何 ref 升级 MUST version+1 且仅对后续 epoch 生效；不得追溯影响已封账周期。
+已封账周期的 settlement_input_pointer_set_hash MUST NOT 被替换或改写。
+D7. 断更锁定与回退
+对关键口径数据，当未满足 freshness 要求时 MUST 使用 last_published 版本（由 staleness_lock_policy_ref 定义）。
+staleness_lock_policy_ref MUST 版本化，并写入 settlement_input_pointer_set。
+D8. 可部分封账，但不得瞎算
+口径缺失时允许生成封账骨架与中间承诺，但 MUST NOT 凭空补数或自由推断。
+封账摘要 MUST 写入 calc_completeness_status ∈ {COMPLETE, PARTIAL, MISSING} 并写入 missing_ref_list_hash。
+后续补齐只允许 SettlementAmendment(addendum) 追加，不得改写原封账内容。
+D9. 发放闸门外置到 PSA-3
+PSA-2 MUST NOT 直接发放；只记账与封账。
+封账记录 MUST 引用 payout_gate_ref（指向 PSA-3 输出的闸门状态接口）。
+若 payout_gate_ref 判定为 PAYOUT_BLOCKED/PAYOUT_DELAYED，则任何发放模块 MUST 禁止发放。
+D10. 明细承诺与可证明性
+本期结算明细 MUST 以 settlement_lineitem_root 承诺化上链；单条明细 MUST 可提供 Merkle proof 或等价证明。
+每条 LineItem 至少包含： anti_replay_key participant_commit_hash（匿名承诺） amount_commit_hash（金额承诺） refs_used_digest（12条计算条目 ref 摘要） amount_calc_policy_ref
+D11. 封账断言与责任
+每期封账 MUST 有可验签的 settlement_attestation_sig，签名覆盖 settlement_id + settlement_lineitem_root + settlement_input_pointer_set_hash。
+签名阈值/签名主体规则 MUST 引用 settlement_attestor_policy_ref（版本化，forward-only）。
+D12. 争议/暂缓/审计可链接
+PSA-2 不裁判争议，但 MUST 能被复盘引用： exclusion_set_ref（optional）：被排除/暂缓对象集合承诺 psa3_audit_ref（optional）：进入审计时的定位引用
+D13. ServiceCard 边界
+ServiceCard MUST 只索引 ref/hash/proof/commit；不得新增事实、不得裁判、不得写解释性结论。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4. 封账与结算账本（SettlementRecord） ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4.1 封账周期与命名（MUST） ·epoch_id（必填）：本期结算周期唯一标识（如 YYYY-WW / YYYY-MM / 自定义 epoch_seq） ·scope（必填）：结算范围（global / sector / root_domain / project / region / zone 等） ·settlement_id（必填）：H(epoch_id, scope, version, settlement_input_pointer_set_hash, confirmed_event_set_ref, ts, nonce)
+4.2 结算对象与纳入集合（MUST） ·confirmed_event_set_ref（必填）：本期纳入结算的 PSA-1 事件集合引用 ·anti_replay_key_set_root（必填）：本期纳入结算的 anti_replay_key 集合承诺根 ·exclusion_set_ref（可选）：本期被排除对象集合引用
+硬规则：可结算对象仅允许来自 PSA-1 的 ServiceConfirmed(..., ACCEPT) 所指向的 anti_replay_key；未确认对象不得进入结算账本。
+4.3 结算依据指针（MUST） ·settlement_input_pointer_set（必填）：见第3节 D5 定义的字段集 ·settlement_input_pointer_set_hash（必填）：H(settlement_input_pointer_set canonicalized)
+4.4 结算明细承诺（MUST，匿名可公开） ·settlement_lineitem_root（必填）：本期所有结算明细的 Merkle root ·lineitem_schema_ref（可选但推荐）：明细字段结构规则引用
+每条 LineItem 最小字段： ·anti_replay_key ·participant_commit_hash（不得强制公开 root_id 明文） ·amount_commit_hash ·refs_used_digest（12条计算条目 ref 的哈希摘要） ·amount_calc_policy_ref
+4.5 发放闸门（MUST 引用，不在 PSA-2 裁判） ·payout_gate_ref（必填）：指向 PSA-3 输出的发放闸门判定接口 约束：若判定为 BLOCKED/DELAYED，发放模块不得发放；PSA-2 不裁判原因，只要求可复盘引用。
+4.6 签名与责任（MUST，按项目等级分层）✍️ ·settlement_attestation_sig（必填）：对 settlement_id + settlement_lineitem_root + settlement_input_pointer_set_hash 的签名 ·settlement_attestor_ref（必填）：签名主体引用 ·settlement_attestor_policy_ref（必填）：签名与阈值规则引用（版本化，forward-only）
+项目等级（7级）：GLOBAL / NATIONAL / PROVINCIAL / CITY / DISTRICT / GRID / POINT
+分级签名要求： ·GRID、POINT：允许 system_node / gateway / auto_settlement_attestor 自动签名； ·DISTRICT 及以上：必须引用 PSA-3 的审计/验收分级与人工+AI/多签规则作为封账出具前置条件。
+4.7 不可变更与加注（MUST） ·SettlementFinalized(settlement_id, ts, settlement_attestation_sig)：一旦 Finalized，不可修改任何既有字段。 ·SettlementAmendment(addendum_id, settlement_id, reason_code, new_refs, ts, sig)：仅允许追加加注/更正引用，不得改写原封账内容。
+4.8 服务卡片（ServiceCard）：PSA-1/2/3 全链路串联引用（MUST）📇
+·service_card_id（必填）：H(anti_replay_key, project_id, version, epoch_id, nonce) ·service_card_ref（必填）：该卡片的引用/索引入口
+ServiceCard 必须能定位三类包：
+A) PSA-1 承诺包（事实与证据） ·psa1_fact_ref：指向 ServiceSubmitted / ServiceConfirmed 事件与其证据承诺 ·psa1_proof_schema_ref（可选）：若存在 RANDOM_SAMPLED_POINTS 等 proof_schema，需可定位其输出字段
+B) PSA-2 记账包（本账本内） ·settlement_id / epoch_id / scope ·lineitem_proof_ref：证明该 anti_replay_key 对应 LineItem 属于 settlement_lineitem_root 的 Merkle proof ·amount_commit_hash / refs_used_digest
+C) PSA-3 审计包 ·psa3_audit_ref（可选）：若进入审计，定位审计事件与裁决承诺 ·payout_gate_ref（必填引用）：最终发放闸门状态由 PSA-3 输出
+约束：ServiceCard 仅做引用串联，不得引入新增事实字段，不得产生裁判含义；结构升级须 version+1 且 forward-only。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5. 记账参数绑定 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5.1 铸币记账参数
+·reward_model_id：报酬模型编号（可替换、可升级） ·root_domain_id：所属最大主项目域标识，用于上溯计算领域占比与饱和度 ·share_root_ref：主项目域占比引用（版本化） ·saturation_policy：需求饱和度抑制策略（与条目10配合；决定铸币如何趋零） ·saturation_metric ·damping_function_id ·params_hash
+5.2 货币胀缩率参数（对应条目11）
+monetary_factor_ref 的数据来源： ·SU_price_oracle：SU 对应实际物资价格观测数据（SU 作为价值锚定基准） ·monetary_calibration_policy_ref：如何用价格观测数据计算胀缩率的规则引用
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6. 动态因子接口 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6.1 归因系数接口（对应条目9）
+·attribution_model_ref：归因模型引用（预计效益 vs 实际效益的计算口径） ·attribution_oracle_ref：归因相关数据口径/来源（实际效益由 PSA-3 确认输出） ·attribution_policy_ref：异常处理/回退规则引用
+约束：归因口径必须版本化并写入 settlement_input_pointer_set。
+6.2 需求度系数接口（对应条目10）
+6.2.1 核心公式骨架 
+DemandRate = 项目总任务量 / 项目总周期 ← 来自 ProjectSpec（系统期望完成速度） SupplyRate = 已完成任务量 / 已过时间 ← 来自 PSA-1 链上事实（实际完成速度）
+DemandFactor = clamp( (DemandRate / (SupplyRate + 1))^α, floor = 0（触发饱和归零阈值时）， cap = demand_factor_cap（默认=3，由 demand_factor_cap_ref 引用） )
+effective_base_reward = base_reward × DemandFactor （需求度系数作用于基础报酬，后续所有系数在 effective_base_reward 上乘算）
+分区行为： · SupplyRate < DemandRate（供给不足） → DemandFactor ∈ (1, cap]，拉高报酬吸引工作力 · SupplyRate ≈ DemandRate（供需平衡） → DemandFactor ≈ 1，正常报酬 · SupplyRate > DemandRate（需求饱和） → DemandFactor ∈ [0, 1)，报酬递减 · SupplyRate > tipping_point（负效益区）→ DemandFactor < 0，触发负效益流程（见 6.2.3）
+引用字段（全部版本化）： ·demand_factor_cap_ref：需求度系数上限引用（默认值=3；不同工作类型可配置不同上限） ·demand_alpha_ref：α 参数引用（按工作类型版本化；α<1 反应平缓，α>1 反应敏锐） ·demand_saturation_policy_ref：饱和归零阈值引用（定义触发 DemandFactor=0 的具体条件） ·demand_tipping_point_ref：负效益界限点引用（定义 SupplyRate 超过何值进入负效益区） ·assignment_policy_ref：已完成任务量的计入口径引用（何时计为有效 SupplyRate）
+事件（MUST）： TaskTaken(project_id, version, participant_ref, t) TaskStartHeartbeat(project_id, version, participant_ref, t) TaskAutoReleased(project_id, version, participant_ref, t, reason_code)
+约束（MUST）： ·DemandRate 来自 ProjectSpec，SupplyRate 来自 PSA-1 链上事实，两者均可复算可审计。
+6.2.2 负效益机制（DemandFactor < 0）
+当 SupplyRate 超过 demand_tipping_point_ref 定义的界限点时，该工作类型继续增加将产生反向效益，系统进入负效益处理流程。
+界限点的含义：不同工作类型的负效益拐点各不相同，由外部模型按工作类型版本化定义。例如： ·种树密度过高 → 争夺水分，成活率崩塌 ·施肥过量 → 土壤酸化，反向破坏农业效益
+负效益记录触发后，产生义务： ·修复义务：造成的损害需要修复 ·学习义务：需要参加教育/培训了解为何有害 ·上述义务本身可作为新的服务行为进入 PSA-1 流程
+PSA-2 的职责边界：PSA-2 只负责记录负效益事件与引用指针，不裁判义务内容。 PSA-2 生成 NegativeEffectRecordCreated 事件后，由 PSA-3 接收该事件并触发义务认定流程；修复义务与学习义务的认定、裁判与执行，全部在 PSA-3 内完成，PSA-2 不介入。
+事件（MUST）： NegativeEffectDetected(project_id, version, service_type_id, supply_rate, tipping_point_ref, ts) NegativeEffectRecordCreated(anti_replay_key, project_id, demand_factor_value, ts, psa3_ref)
+引用字段： ·demand_tipping_point_ref：界限点定义引用（版本化，由工作类型计算模型提供） ·negative_effect_policy_ref：负效益处理规则引用（义务类型、触发条件等，由 PSA-3 定义）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.2.3 双轨负效益检测 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 
+负效益的发现通过两条独立渠道进行：
+轨道A：系统自动检测（主动防线） ·来源：PSA-1 链上 SupplyRate 数据持续计算，超过 demand_tipping_point_ref 定义的界限点时自动标记。 ·触发：系统自动生成 NegativeEffectDetected 事件，自动进入 PSA-3 裁判流程。 ·不依赖任何人的申报或主动行为。
+轨道B：群众反映渠道（补充防线） ·来源：系统数据无法覆盖的现实负效益（如生态影响、社会影响、邻域外溢效应等）。 ·入口：由 public_feedback_policy_ref 定义的群众反映渠道，接收方为 PSA-3。 ·PSA-2 的职责：仅说明此渠道存在，引用 public_feedback_policy_ref 接口占位；渠道设计、信息接收、真实性判断与裁判全部由 PSA-3 负责。
+引用字段： ·public_feedback_policy_ref：群众反映渠道规则引用（PSA-3 定义，PSA-2 只做接口说明）
+6.3 各工作特性因子接口（对应条目4–7及条目12）
+·intensity_factor_ref：强度因子引用（条目4） ·difficulty_factor_ref：难度因子引用（条目5） ·risk_factor_ref：危险度因子引用（条目6） ·skill_factor_ref：专业程度因子引用（条目7，如适用） ·marginal_factor_ref：边际系数引用（条目12） ·factor_composition_policy_ref（optional）：因子组合策略引用
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7. 价值权重输入层 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7.1 顶层结构引用
+·key_sectors_ref：关键领域集合定义（版本化引用） ·sector_weight_ref：各领域占比输出引用（版本化） ·root_domain_map_ref：最大主项目域定义与领域映射引用 ·share_root_ref：主项目域占比引用（版本化）
+7.2 冲击态输入
+·shock_index_global(t) ∈ [0,1] ·shock_index_region(r,t) ∈ [0,1]
+字段集合、聚合、异常处理与断供回退均由 OracleSetSpec 版本化绑定；触发/退出阈值等规则由 activation_interlocks_ref 版本化绑定。
+PSA-2 只记录： ·ShockModeEntered(scope, t, shock_index_hash, rule_version_hash) ·ShockModeExited(scope, t, shock_index_hash, rule_version_hash) 并保证 forward-only，不追溯。
+7.3 领域归类与权重输出
+每个 RootDomain(D) / ProjectSpec 必须可复算地绑定到一个且仅一个 sector_id。 ·归类结果必须版本化并可审计，forward-only。 ·sector_weight_ref 必须写入 settlement_input_pointer_set。
+7.4 效益锚点（最大主项目→最小子项目的价值传导）
+·benefit_anchor_set_ref（MUST）：本期使用的物理效益锚点集合引用 ·benefit_measure_oracle_ref（MUST）：效益测算口径/来源引用 ·anchor_weight_policy_ref（optional）：多锚点加权策略引用 ·benefit_calibration_policy_ref（optional）：单位效益价值锚形成规则引用
+约束：benefit_* 只允许以引用方式进入结算；替换须 version+1 且 forward-only。
+7.5 基线规则
+·基线定义：baseline(t, scope) = 无新增贡献时可稳定达到的效益水平 ·净新增效益：net_benefit(t) = benefit(t) - baseline(t) ·长尾收益/补差仅允许对 net_benefit 生效
+baseline_ref 必须包含： ·source_scope ·event_set_ref（PSA-1 事件集合引用） ·settlement_stat_ref（PSA-2 统计集合引用） ·aggregation_policy_ref（窗口/平滑/去噪规则）
+硬规则：Baseline 只能来源于系统自身沉淀数据（PSA-1 链上事实、PSA-2 封账统计、系统内部可复算聚合输出）。
+基线重置：当效益长期稳定抬升时，允许将基线提升至新水平；须 forward-only，不追溯历史封账。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8. 时间粒度与配额节奏 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8.1 记账周期定义（MUST）
+·epoch_spec_ref：epoch 定义引用（版本化），包含： epoch_type ∈ {WEEK, MONTH, CUSTOM} epoch_id_format timezone_ref epoch_boundary_rule_ref
+8.2 配额节奏（仅用于执行节奏，不是货币发行上限）
+·quota_schedule_ref（版本化）：项目执行目标/节奏引用 约束：不得被解释为货币发行上限或资金池预算；仅用于执行节奏控制与统计口径对齐。
+8.3 断更锁定
+·staleness_lock_policy_ref（版本化）：包含 data_freshness_requirement / fallback_rule / lock_scope 规则：若数据未达 freshness 要求，使用 last_published 版本继续计算。
+8.4 口径缺失时的处理
+·calc_completeness_status ∈ {COMPLETE, PARTIAL, MISSING}（写入封账摘要） ·missing_ref_list_hash：缺失引用列表承诺
+事件（MUST）： SettlementComputedPartial(settlement_id, epoch_id, missing_ref_list_hash, ts) SettlementFinalized(settlement_id, ts, sig) SettlementAmendment(addendum_id, settlement_id, reason=MISSING_DATA_FILLED, new_refs, ts, sig)
+约束：PARTIAL/MISSING 状态下不得输出可发放金额结论；发放由 PSA-3 gate 决定。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9. 覆盖留白与冻结桶 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9.1 覆盖状态（MUST）
+·coverage_map_ref（版本化）：region_id → coverage_state ∈ {CONFIRMED, UNCONFIRMED} ·coverage_policy_ref：状态判定规则引用
+事件：CoverageStateSet(...) / CoverageStateChanged(...)
+9.2 冻结桶（MUST）🧊
+UNCONFIRMED 区域的份额不归零，进入 gap_bucket 冻结暂存。
+·gap_bucket_ref（版本化）：region_id → frozen_share_commit
+规则： ·UNCONFIRMED：份额进入 gap_bucket，不参与当期结算。 ·变为 CONFIRMED 后：gap_bucket 仅用于后续周期的覆盖度恢复计算，不触发对既往封账周期的补发/冲抵/回收。
+事件：GapBucketFrozen(...) / GapBucketReleased(...) / GapBucketRolledForward(...)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 10. 长尾收益模块（Long-tail Reward） ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10.1 定位与生命周期
+长尾收益是独立于即时报酬的持续收益流，来源于工作行为在完成后持续产生的效益。
+一个有长尾收益的服务，生命周期分两条线：
+A) 即时报酬线（一次性关闭） PSA-1确认 → PSA-2计算即时报酬（12条计算条目）→ PSA-3审计 → 发放 → 完账封闭
+B) 长尾收益线（持续开放流） PSA-3审计完成 → 触发长尾收益计算启动 → 按周期持续计算与封账 → PSA-3持续放行 → 直至该项目不再产生可计量效益为止
+约束（MUST）： ·即时报酬与长尾收益独立封账，不得合并计算。 ·长尾收益线由 PSA-3 审计通过后触发启动；审计未通过则长尾收益不启动。 ·长尾收益在服务卡片（ServiceCard）中须以显眼位置独立展示，与即时报酬状态分开呈现。
+10.2 范围边界（MUST）
+长尾收益以项目（project_id）为边界，不跨项目合并。
+·工作者在哪个项目完成的服务，其长尾收益就属于该项目的效益池，不与同类型其他项目合并。 ·示例：在朵以森林项目种树 → 长尾效益属于朵以森林项目效益池，不与尼米县其他森林项目合并。
+从项目效益池向上的映射路径： 项目整体效益（project_id边界） → 占所属板块（sector）的百分比 → 占所属领域（domain）的百分比 → 确定该项目可分配的长尾收益总量
+上限约束：该项目参与者的长尾收益总和不超过该项目本身的整体效益。
+
+
+10.3 长尾收益池计算接口
+·project_longtail_pool_ref：该项目的长尾收益池定义引用（版本化） 包含：project_id 边界、效益观测口径、向板块/领域的映射规则、池总量上限规则
+·longtail_benefit_oracle_ref：项目整体效益的观测数据口径引用 说明：实际效益由 PSA-3 持续确认并输出，PSA-2 引用其输出作为计算输入
+·longtail_sector_mapping_ref：项目→板块→领域的占比映射规则引用（版本化）
+·longtail_pool_cap_policy_ref：池总量上限规则引用 约束：长尾收益总量不超过该 project_id 的整体效益边界
+
+10.4 个人长尾收益分配公式骨架（MUST） 
+LongTailReward_i = ProjectPool × (w1 × IndividualScore_i + w2 × PoolShare)
+其中： ·ProjectPool：该 project_id 本期可分配的长尾收益总量（由 10.3 计算得出） ·IndividualScore_i：工作者 i 的个体权重分（见 10.5） ·PoolShare：均摊份额 = 1 / 本期参与人数（或由 longtail_pool_share_policy_ref 定义） ·w1 + w2 = 1，权重由 longtail_weight_policy_ref 定义（版本化，forward-only）
+权重演进方向（写入 policy，PSA-2 引用）： ·早期（技术不足以精准追踪个体效益）：w1 = 0.3，w2 = 0.7 ·技术成熟后（可精准追踪个体效益）：w1 = 0.7，w2 = 0.3 具体阈值与切换条件由 longtail_weight_policy_ref 版本化定义。
+
+ 10.5 个体权重分接口（IndividualScore） 
+个体权重分反映工作者个人贡献与质量，由外部计算模型提供；PSA-2 只定义接口，不写死计算方式。
+·longtail_individual_score_ref：个体权重分计算模型引用（版本化） 可包含（由模型定义，非穷举）：
+服务记录：来自 PSA-1 的 anti_replay_key 集合（该工作者在本项目的历史贡献记录）
+抽样验证结果：由 PSA-3 输出的抽样校验数据（如成活率抽检结果）
+批次与区域信息：服务所在的地理批次信息
+信誉/历史权重：该工作者在本项目的历史完成质量积累
+约束（MUST）： ·个体权重分的数据来源仅允许来自 PSA-1 链上事实和 PSA-3 已确认输出；PSA-2 不引入新增事实。 ·早期技术不足时，IndividualScore 可以粗糙，但接口必须预留，以确保未来可平滑升级到精细化个体计量。
+ 10.6 防崩机制（三层约束，全部为接口引用） 
+机制1：最低有效性门槛（minimum_validity_threshold_ref） ·定义：若工作者在本项目的服务质量明显低于有效门槛（如抽样成活率极低），则不具备获取长尾收益的资格。 ·数据来源：PSA-3 抽样验证输出。 ·规则：由 minimum_validity_threshold_ref 版本化定义；PSA-2 引用，不写死阈值。
+机制2：抽样校验（sampling_verification_ref） ·定义：不需要100%全量验证，以随机抽样方式校验个体贡献质量，结果影响 IndividualScore。 ·数据来源：PSA-3 执行抽样并输出结果；PSA-2 引用其输出。 ·规则：抽样频率、范围与校验口径由 sampling_verification_ref 版本化定义。
+机制3：信誉历史权重（reputation_weight_ref） ·定义：工作者在本项目的历史完成质量会积累成信誉权重，影响其 IndividualScore 的上下限。 ·规则：积累方式、衰减规则、上下限约束由 reputation_weight_ref 版本化定义；PSA-2 引用，不写死。
+10.7 长尾收益封账结构
+长尾收益独立封账，与即时报酬封账结构平行。
+·longtail_settlement_id（必填）：H(project_id, epoch_id, longtail_pool_ref_hash, participant_set_root, ts, nonce) ·longtail_epoch_id（必填）：本期长尾收益结算周期标识（可与即时报酬 epoch 不同步） ·longtail_lineitem_root（必填）：本期所有个人长尾收益明细的 Merkle root
+longtail_settlement_input_pointer_set（必填）至少包含： project_longtail_pool_ref longtail_benefit_oracle_ref longtail_sector_mapping_ref longtail_pool_cap_policy_ref longtail_individual_score_ref longtail_weight_policy_ref longtail_pool_share_policy_ref minimum_validity_threshold_ref sampling_verification_ref reputation_weight_ref payout_gate_ref（必填，PSA-3 放行接口）
+每条 LongTailLineItem 最小字段： ·anti_replay_key（对应原始服务行为） ·participant_commit_hash（匿名承诺） ·longtail_amount_commit_hash（本期长尾收益金额承诺） ·individual_score_commit（个体权重分承诺） ·refs_used_digest
+签名与发放： ·longtail_settlement_attestation_sig（必填）：签名覆盖 longtail_settlement_id + longtail_lineitem_root + longtail_settlement_input_pointer_set_hash ·payout_gate_ref（必填）：PSA-3 持续输出放行状态；每期长尾收益独立过闸
+约束（MUST）： ·长尾收益持续运行，直至 project_longtail_pool_ref 定义的终止条件触发。
+ 10.8 服务卡片长尾收益展示（MUST） 
+服务卡片（ServiceCard）对有长尾收益的服务须在显眼位置独立展示：
+·immediate_reward_status：即时报酬状态（FINALIZED / PENDING / BLOCKED） ·longtail_reward_status：长尾收益状态（ACTIVE / NOT_STARTED / TERMINATED） ·longtail_accumulated_ref：累计长尾收益引用（可复盘历史各期发放） ·longtail_current_epoch_ref：本期长尾收益计算状态引用 ·longtail_pool_info_ref：所属项目效益池信息引用（可查看项目整体效益状态）
+约束：ServiceCard 展示字段仍只索引 ref/hash/commit，不写入原始金额明文，不产生裁判含义。
+
+
+作者：潘正阳（Zhengyang Pan）｜一根大萝卜（BBBigradish）
