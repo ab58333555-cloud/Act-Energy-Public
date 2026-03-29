@@ -1,0 +1,627 @@
+① PSA-1-lite（最小数据结构 / 最小校验流程）🪶
+
+PSA-1-lite 只干一件事：把"服务结果可验证"做成工程闭环。
+任何"价值/权重/铸币/周期记账/审计追责"都不在这里算，只在这里留引用接口。
+
+【全局约定】
+- 所有 *_ref 字段：PSA-1 仅校验引用存在 + 签名/版本可验证，不解析内容；变更须版本化，forward-only 生效。
+- 校验失败的拒绝/risk_flag 口径由对应策略引用定义；若未声明则默认拒绝。
+- PSA-1 不计算任何价值/权重/铸币/报酬数值，仅输出可验证事实供 PSA-2/PSA-3 引用。
+- evidence_bundle_hash = H(EvidenceBundle 中排除 device_sig / group_signatures 字段后的规范化序列)；所有签名 MUST 直接对此哈希签名，严禁字段子集签名。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A. 最小数据结构
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+A1. ProjectLiteSpec（项目最小规范）
+
+·project_id：唯一ID（可读ID或哈希）
+·project_tag_id（必填）：项目实体牌唯一标识，用于物理世界的公众识别与项目归属确认。实体牌不要求出现在证据照片中。
+·project_notice_commit_hash（可选但强烈建议）：H(project_id, version, location_scope, gateway_registry_ref, issuer_region_node_ref, 发布主体签名, ts, ...)；用于固化官方公告口径，审计时可复算承诺哈希。
+·name：项目名
+·version：版本号（变更=新版本）
+·owner：发起主体签名/多签规则引用
+·status：Draft / Active / Frozen / Closed；PSA-1 仅读取 status 用于校验，不负责将项目状态变更为 Frozen 或 Closed，该权力归属 owner 或 PSA-3。
+·time_window：开始/结束（允许 open-ended）
+·location_scope：地理范围（GPS polygon / 栅格 / 地块编码集合）
+
+·mobility_class（必填）：∈ {FIXED_SITE, MOBILE_OFFLINE, ONLINE}
+  - FIXED_SITE：工作在网关覆盖范围内；离开范围触发释放/放弃判定。
+  - MOBILE_OFFLINE：接取须在网关范围内完成，执行中可离开；离场不触发释放。
+  - ONLINE：不依赖物理位置；proof_schema 与 presence 口径由 proof_policy_ref 指定；不适用物理点位/地理采样要求。
+
+·mobile_binding_policy_ref（MOBILE_OFFLINE 时必填）：绑定/解绑/转让/外勤状态策略引用；绑定状态机字段集合、签名口径、原子迁移与风控码由该策略写死并版本化。
+·mobile_binding_data_system_ref（MOBILE_OFFLINE 时必填）：项目专属绑定数据系统引用；记录并可审计复算的 target/target_slot 强绑定关系（bind/unbind/transfer），作为服务验证的前提之一。
+·rest_time_policy_ref（必填）：休息时间规则引用；定义每日 2h 额度、不可用释放刷新、不可在采样响应窗内使用、FIXED_SITE 休息离场豁免释放等口径。
+·gateway_registry_ref（必填）：官方网关注册表引用；定义 gateway_id → pubkey → zone_id_set → issuer_region_node_id → 状态(Active/Revoked)；网关须注册且 Active，撤销/换钥须新版本。
+·issuer_region_node_ref（必填）：区域节点注册表引用；定义 region_node_id → pubkey_set → zone_id_set → 认证策略；用于网关归属与授权审计。
+
+·gateway_map_policy_ref（必填）：网关观测值 → location_key → TargetRef 的映射规则集引用。
+  - 口径A：观测值归一为 grid_id，再由官方映射表映射到合法 anchor_id（如 street_segment_id）。
+  - 口径B：网关直接输出签章的 location_attestation，PSA-1 只验签章与有效期；必要时可回放到口径A供审计。
+  - 映射表允许按项目范围按需生成、按月/季版本化更新；PSA-1 只引用版本哈希，不要求披露底层地图数据。
+  - 同一 grid_id 覆盖多个 anchor_id 时，冲突消解规则须在此写死。
+
+  【SPACE→ENTITY 动态提升与 Canonical 规则】（须写入本引用并版本化）
+  1) Canonical Anchor Rule：同一 project_id+version 下同一 location_key，系统须选择且仅选择一个 canonical_target_ref 作为 anti_replay / ConfirmService 唯一性主键；选择规则须可复算，不得依赖自由文本。ServiceTag 可引用 canonical_target_ref 作归一字段，但不得承担 anti_replay_key 或确认锁主键职责。
+  2) 优先级（默认，可覆盖但须明确）：若同时解析出强语义锚（ENTITY/RECORD/SYSTEM/PERSON，状态=Active）与 SPACE，canonical_target_ref 须取强语义锚；SPACE 仅作等价映射与审计回放入口。
+  3) SPACE 等价映射：须提供 eq_map(grid_id) → {anchor_id_list, canonical_anchor_id, mapping_proof_ref}；强语义锚生效后，旧 SPACE 提交若命中 canonical_anchor_id 视为等价；anti_replay 与确认锁须以 canonical_target_ref 为唯一主键。
+  4) 冲突处理：eq_map 返回多个候选且无法确定 canonical 时，须 risk_flag 并输出 conflict_reason_code。
+  5) 口径约束：Canonical 规则只影响唯一性主键/反重放/确认锁；EvidenceBundle 仍可同时携带 grid_id 与强语义 anchor_id 供审计回放。强语义锚被撤销则回退至下一优先级，须可复算可审计。
+
+·anchor_registry_ref（必填）：锚点注册表引用；定义 anchor_id → zone_id/region_node → 几何/边界摘要 → allowed_target_slots/schema_ref → 状态(Active/Revoked)。
+
+·multi_target_mode（必填）：∈ {SINGLE, MULTI}；仅改变 TargetRef 绑定方式，不自动改变 anti_replay/结算/审计规则。
+  - SINGLE：单对象，提交须匹配唯一 target_ref。
+  - MULTI：多对象，提交须命中 target_refs[] 白名单中的某一个。
+
+·target_ref（SINGLE 时必填）/ target_refs[]（MULTI 时必填）：服务对象定义。
+  - target_refs[] 元素不得重复（判定键：anchor_type + anchor_id + target_slot）；SINGLE 时不得出现 target_refs[]。
+
+  TargetRef 结构：
+  ·anchor_type：∈ {SPACE, ENTITY, PERSON, RECORD, SYSTEM}
+    - SPACE：保底锚点，以可复算 grid_id 作指代；后续可通过 gateway_map_policy_ref 映射升级，但不得删除。
+  ·anchor_id：按命名空间写死（如 grid_id:... / asset_id:... / person_id:... / record_id:... / system_id:...）
+  ·anchor_scope（可选）：锚点所在范围（如 hospital_id、substation_id 等）
+  ·target_slot（必填）：对象子槽位，须为结构体（非自由文本），表达"作用到对象的哪个状态/部位/需求/记录键"。
+    ·slot_ns（必填）：∈ {part_key, state_key, need_key, record_key, care_slot}
+    ·slot_id（必填）：槽位标识（格式/命名空间由 target_slot_schema_ref 约束）
+    ·params（可选）：参数键值对（允许键集合/类型由 target_slot_param_schema_ref 约束）
+    禁令：target_slot 不得承载过程型动作叙事；"做了哪些步骤"不进入 PSA-1，"结果达成"由 acceptance_rule 证明。
+
+  TargetSlot 有效性三层校验（校验优先级：anchor_registry_ref > target_slot_registry_ref > target_slot_schema_ref）：
+  - target_slot_schema_ref（必填）：slot_ns/slot_id 格式与命名空间校验，禁用动作语义。
+  - target_slot_param_schema_ref（必填）：params 的允许键集合、键值类型、必填/可选、长度上限。
+  - target_slot_registry_ref（必填）：slot 有效性注册表，定义 slot_key → status → governance_proof_ref → scope_binding → updated_at。
+    - slot_key = H(slot_ns, slot_id, param_schema_id)；若 target_slot_param_schema_ref 存在，param_schema_id 须取其引用ID，不得省略。
+    - status ∈ {PROPOSED, PUBLISHED, ACTIVE, REVOKED}；governance_proof_ref 须经评审/公示/背书且可验签；PSA-1 只验状态+签名，不解析论证内容。
+    - scope_binding 至少支持：region_node_id / zone_id_set / project_tag_id / anchor_type / anchor_namespace 之一。
+    - 若允许多 param_schema 版本并行，须显式声明 canonical_param_schema_id 选择规则；否则视为不合法 registry。
+
+  TargetRef 示例：
+  | 行业 | anchor_type | anchor_id | target_slot |
+  |------|-------------|-----------|-------------|
+  | 医疗 | PERSON | person_id:PID-xxxx | {care_slot, visit_episode, {episode_id:EPI-xxxx}} |
+  | 能源 | ENTITY | device_id:ASSET-xxxx | {state_key, power_outage_alarm, {code:ALM-xxxx}} |
+  | 食物 | RECORD | record_id:BATCH-xxxx | {record_key, qc_test_case, {case_id:QC-xxxx}} |
+  | 交通 | ENTITY | vehicle_id:VEH-xxxx | {part_key, subsystem, {name:brake_module}} |
+  | 生态 | SPACE | grid_id:H3-xxxx | {need_key, river_cleanup, {need_level:L2}} |
+
+·participant_mode（必填）：∈ {INDIVIDUAL, GROUP}
+  - INDIVIDUAL：每次提交对应单一 root_id。
+  - GROUP：提交对应一个 participant_group_id，须满足全员签名（n-of-n）方可进入有效确认流程。
+·participant_group_policy_ref（GROUP 时必填）：须定义 member_set_ref（含成员ID列表+版本号，变更=新版本，不追溯）；允许任意成员代为提交，不降低签名要求；成员治理细则归 PSA-3。
+
+·service_templates[]（必填）：service_type_id 白名单，每个元素须在 ServiceUnitType 集合中存在。
+·acceptance_policy_ref（必填）：验收策略引用；验收模式选择须遵循 risk-tiered policy（按风险等级匹配成本与责任）。
+·proof_policy_ref（必填）：证据策略引用（证据类型、必填项、哈希结构、时间戳要求）。
+·anti_replay_policy_ref（必填）：防重放策略引用；唯一键字段集须经 canonicalization（默认 JCS + SHA-256），规范化规则写死并版本化。
+·dispute_policy_ref（必填）：争议入口策略引用；裁判细节在 PSA-3。
+·identity_binding_policy_ref（必填）：身份/设备绑定策略（ROOT_ID ↔ device_pubkey_set；挑战-响应；登记/撤销由外部注册表提供）。
+·presence_policy_ref（必填）：在场策略（范围内挑战-响应；离场即失效；session_ttl；续期/重放窗口）。
+·work_lease_policy_ref（必填）：任务租约策略（lease_ttl；Pause/Resume/Transfer 规则；跨项目冻结口径）。
+·presence_attendance_policy_ref（可选）：在场证明实现说明；默认由 presence_policy_ref + work_lease_policy_ref 构成；如替换为外部实现，须输出等价可验证凭证。
+·external_refs（可选）：PSA-2/3 引用占位（如 oracle_set_hash、reward_model_id 等，仅引用不校验内容）。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A1.1 项目移动性分立规则
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+以 mobility_class 为分流开关：
+
+A) FIXED_SITE
+离开网关范围导致 PresenceSession 失效；若未 Pause/Transfer 则按 LEFT_ZONE 释放租约。
+
+B) MOBILE_OFFLINE
+B1. 接取前置：PresenceSession/WorkLease/TaskToken 须在网关范围内建立；接取后离开不触发释放，标记为 in-field。
+B2. 强绑定：接取后须对 target_ref/target_slot 做强绑定（enhanced_bind=TRUE）；绑定关系由 mobile_binding_data_system_ref 管理并出具可验证回执。
+B3. 放弃须回网关解绑：须回到网关范围完成 unbind 后才允许放弃；以 mobile_binding_data_system_ref 回执为准。
+B4. 转让可在网关外发生：仅允许转让给同一项目有效在岗的工作者（受让资格由 mobile_binding_policy_ref 写死）；强绑定关系须原子性迁移，避免双重绑定。
+B5. 验证前提：提交时 target_ref/target_slot 须与绑定系统当前记录可复算一致；不一致则拒绝或 risk_flag。
+
+C) ONLINE
+不要求物理网关；presence/lease 可采用网络网关等价证明；不适用物理点位/地理采样要求（除非项目另行声明）。
+
+A1.2 TargetRef（服务绑定对象）
+TargetRef/TargetSlot 的字段结构与有效性规则，以 A1.target_ref 为唯一规范源。PSA-1-lite 只在"对象层"绑定服务，不讨论价值、权重与铸币。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2. ServiceUnitType（服务单元类型定义）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+·service_type_id
+·unit_spec：最小可验证规格（如树种、坑位半径、土壤压实标准等；存活判定窗口等扩展归 PSA-2/3）
+·completion_mode（必填）：∈ {RESULT_ACHIEVEMENT, FIXED_SERVICE_RESULT}
+  - RESULT_ACHIEVEMENT：以单个结果达成为核心；过程证明采用过程采样，不进行点位抽取。
+  - FIXED_SERVICE_RESULT：以持续服务至规定时长并保证结果达成为核心；过程证明采用随机采样点位，结束时提交完成视频。
+  约束：FIXED_SERVICE_RESULT + RANDOM_SAMPLED_POINTS 时，total_work_duration 须由 duration_profile_ref 或 proof_policy_ref 可复算，否则不得启用该采样类型。
+  约束（ONLINE）：心跳以工作进度更新为准（最小 1 byte 变动即有效）；不要求采样照片/完成视频；不产生随机采样加成。
+
+·以下画像/参数引用（均可选）：若使用须随 service_type 版本上链，变更须 version+1，forward-only。
+  work_profile_ref / intensity_profile_ref / difficulty_profile_ref / risk_profile_ref / skill_profile_ref / non_interrupt_profile_ref / duration_profile_ref / factor_composition_policy_ref
+
+·required_fields：执行者必填字段（geo/grid_id、time_completed、unit_serial、object_tag_id、evidence_hashes、device_sig/credential）；unit_serial 唯一性由 anti_replay_policy_ref 约束。
+·acceptance_mode：AUTO / HUMAN / HYBRID；可含 AUTO_SCAN（无人机/摄像/传感器扫描作为证据输入之一，非强制）。
+·acceptance_rule：验收规则（角色、期限、阈值、失败重提规则）。
+·proof_schema：证据格式（照片/视频/定位/传感器/第三方报告）+ 哈希清单结构。
+
+────────────────────────────────────
+ProofSchemaType: RANDOM_SAMPLED_POINTS
+────────────────────────────────────
+适用于物理现场项目；不适用于纯网络/电子类项目。
+目的：不要求直播，通过"不可替换的随机点位分配 + 统一视角拍摄回执 + 可选自动判定"形成可验证结果证明闭环。点位在接取任务时由系统写入 WorkLease，签发后不可替换。
+
+核心约束（写死）：
+- 视角：统一 view_id = FRONT（正前方单视角），每点位仅允许 1 张，不得多视角/多张拼组替代。
+- 超广角：等效焦距 13–15mm 或 EXIF FOV ≥ 110°；FIXED_SITE 与 MOBILE_OFFLINE 均适用。
+- FIXED_SITE 站位（写死）：分散式→点位南边向北拍；中心围绕式→站点位朝中心拍；拓扑类型由 WorkLease 或 proof_policy_ref 写死并版本化。
+- 点位：数量可配置（默认=4），由系统按 TargetRef+TargetSlot 空间语义分配并写入 WorkLease.point_set[]；工作者不得指定点位。
+- 照片内容：须直接体现"服务者正在执行已接取的该项目工作内容"。
+- 最小采集边界：只提交校验必需的最小画面；额外环境影像须在 proof_policy_ref 中显式声明并默认关闭。
+
+ClarityCheck（可选提示，不作为拒绝条件）：
+当 APP/AI 判定照片模糊/低光/遮挡无法稳定识别 object_tag_id 时，须向工作者提供二选一：
+(1) 仍然上传：标记 risk_flag；(2) 重新拍摄：新 photo_hash/SampleCaptureReceipt，不更换 lease_id。
+提示指标（由 proof_policy_ref 写死）：sharpness_score / exposure_score；触发阈值 clarity_warn_threshold。
+可选留痕：clarity_hint_commit_hash = H(photo_hash, sharpness_score_bucket, exposure_score_bucket, user_choice, ts, nonce)。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2.1 随机采样触发 SamplingTrigger
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：防"占坑不干活/过程造假"，在 WorkLease=HELD 期间按 completion_mode/mobility_class 发起采样响应挑战。
+
+分流口径：
+
+| mobility_class | completion_mode | 执行规则 |
+|---|---|---|
+| FIXED_SITE | FIXED_SERVICE_RESULT | 本节随机采样（按总工时四分之一触发） |
+| FIXED_SITE | RESULT_ACHIEVEMENT | A2.1.0 结果达成式过程采样 |
+| MOBILE_OFFLINE | 任意 | A2.1.1 移动项目采样规则 |
+| ONLINE | 任意 | 由 proof_policy_ref 另行定义，不适用物理点位采样 |
+
+1) 触发频率
+系统须在总工作时间的 1/4 节点各触发一次，共最多 4 次（trigger_seq ∈ {1,2,3,4}）：
+trigger_issued_at = work_started_at + n × (total_work_duration / 4)
+total_work_duration 须由 duration_profile_ref 或 proof_policy_ref 可复算。
+休息时间不发起触发，休息时长不计入经过时间。
+
+2) 限时与释放（偶数失败释放，写死）
+- trigger_seq ∈ {1,3}：deadline = issued_at + 12min；超时仅记 INCOMPLETE，不释放。
+- trigger_seq ∈ {2,4}：deadline = issued_at + 12min（trigger_seq=4 且 seq=3 已 COMPLETE 则为 30min）；超时须立即释放 WorkLease。
+
+3) 提前触发（仅 completion_mode = RESULT_ACHIEVEMENT 时允许；FIXED_SERVICE_RESULT 严禁）
+工作者 MAY 在 lease=HELD 时发起提前触发请求；系统生成 trigger_id/seq/deadline 并签章；仍计入 1..4 上限，受偶数失败释放约束；点位仍从 untriggered_point_set 选，工作者不得指定。
+
+4) SamplingTrigger 最小字段
+trigger_id / lease_id / trigger_seq（1..4）/ trigger_issued_at / trigger_deadline_at / selected_point_id / trigger_sig（网关或 region_node 签名）
+
+5) 点位选择规则（写死）
+三类状态：untriggered_point_set / triggered_but_incomplete_set / completed_point_set。
+每次触发仅从 untriggered_point_set 选，须选距工作者当前可复算位置最近的点位；untriggered_point_set 为空则停止触发。
+
+6) 补拍/重传
+可对任意点位补拍，不更换 lease_id，不产生新 trigger，不延长 deadline；一旦 point_id 达成 PointComplete 即永久计入 completed_point_set；仅在 lease=HELD 且未 FINALIZED/RELEASED 时有效。
+
+7) SampleRound 定义
+- round_key = H(lease_id, trigger_seq, selected_point_id)
+- SampleRoundStatus = COMPLETE 当且仅当：该 round_key 下存在 1 张有效回执满足 view_id=FRONT + 可验签 + proof_policy_ref 硬规则。
+- round_completed_at：取该有效回执的 ts。
+- 原子性：退出/中断后重拍须新 capture_session_id；不接受跨 session 拼接。
+
+8) 起算时刻
+trigger_issued_at 由签发方（gateway/region_node）生成并签章，为唯一合法起算点；客户端是否收到不影响起算；异常仅通过 PSA-3 争议入口处理。
+
+9) PSA-1 校验
+- trigger_sig 须由 gateway_registry_ref 或 issuer_region_node_ref 验签。
+- selected_point_id ∈ WorkLease.point_set[] 且属于 untriggered_point_set。
+- trigger_seq 单调递增且 ≤ 4；回退/重复则拒绝或 risk_flag。
+- trigger_deadline_at 须与触发序号及上一触发完成状态一致，须可复算。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2.1.0 结果达成式过程采样（FIXED_SITE + RESULT_ACHIEVEMENT）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+适用：仅 mobility_class = FIXED_SITE 且 completion_mode = RESULT_ACHIEVEMENT；不进行点位抽取，始终围绕同一结果对象/结果状态。
+
+1) 触发与采样
+- 最多 4 轮（process_trigger_seq ∈ {1,2,3,4}，单调递增），每轮 1 张照片。
+- 默认每 45 分钟触发一次；工作者 MAY 提前发起；休息时间不计入；某轮提前完成则下轮计时从 round_completed_at 重新起算。
+- deadline、偶数轮超时释放、12m/30m 窗口、提交新鲜度规则与 A2.1 一致；将 point_id 替换为 process_round_id。
+
+2) 照片要求
+每轮 1 张，须直接体现"服务者正在推进已接取任务对应的该单个结果"；签名、时间戳、设备绑定、不可跨 session 拼接等口径与 SampleCaptureReceipt 一致。
+
+3) 回执映射
+沿用 A2.1.2 SampleCaptureReceipt 结构；capture_ref = process_round_id（∈ {1,2,3,4}）；其余字段与签名口径不变。
+
+4) 完成判定
+- process_key = H(lease_id, process_round_id)；完成即永久 COMPLETE（除非 PSA-3 裁决撤销）。
+- 完成条件：存在 1 张有效 SampleCaptureReceipt 满足：lease_id 一致；process_round_id ∈ {1,2,3,4}；view_id=FRONT；device_sig 可验签；满足 proof_policy_ref 硬规则。
+- round_completed_at：取该有效回执的 ts。
+- 跳轮/回退/重复提交：拒绝或 risk_flag。
+
+5) 采样合规状态输出
+- captured_count = |completed_round_set|；points_count = 4；missing_count = points_count - captured_count。
+- captured_count == 4 → sampling_compliance_status = COMPLETE；否则 INCOMPLETE。
+- PSA-1 须输出：captured_count / missing_count / completed_round_set_digest / missing_round_set_digest / sampling_commit_hash / sampling_compliance_status。
+- sampling_commit_hash = H(lease_id, sort_by(process_round_id)(photo_hash list), completed_round_set_digest, missing_round_set_digest, nonce)
+
+6) 完成视频（若项目要求）
+结果达成后须提交 ≥ 480p 完成视频；PSA-1 校验签名、时间戳、结果绑定与 evidence_bundle_hash 一致性。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2.1.1 移动项目采样触发规则（MOBILE_OFFLINE）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：允许外勤离开网关范围，仍以随机采样形成过程在岗与结果可验证闭环；异常失联时触发锁定冻结与救援联动。
+
+1) 触发频率：每 60 分钟一次；trigger_seq 单调递增，不设 4 次上限。
+
+2) 响应时限：每次触发后工作者须在 30 分钟内响应，否则触发 LOCK_FREEZE 并报警。
+合法响应方式（满足其一）：
+  a) 上传 1 张合规超广角采样照片（等效 13–15mm 或 FOV ≥ 110°）；
+  b) 成果可独立类：上传 ≥ 480p 完成视频并成功入库，视为响应且重置响应计时，下一个 60 分钟周期从该时刻重新起算。
+
+3) 采样照片内容
+- 工作内容类：任务相关场景 + 工作者可关联要素 + target_ref/target_slot 可关联的最小要素。
+- 成果可独立类：完成成果 + 完成地点可识别要素 + target 关联要素。
+
+4) LOCK_FREEZE（超 30 分钟未响应）
+- WorkLease.state → LOCK_FREEZE；触发报警。
+- 须同步信息包给公安/医院救护，至少含：project_id, version, service_type_id, lease_id, root_id/participant_ref, 当前绑定记录摘要（脱敏口径由 mobile_binding_policy_ref 写死）, 最近采样照片/视频时间戳与 GPS（若有）, 最后有效响应时间, 最近定位点, 网关信息, contact_hint（若项目提供）。
+- 解冻须以公安/救护确认回执为准（回执格式与权威集合由 dispute_policy_ref 或 proof_policy_ref 指定）。
+
+5) 解冻后处置
+- 继续执行：按 TRANSFER 转交其他工作者（受 mobile_binding_policy_ref 受让资格限制）。
+- 结束：进入 PSA-3 争议/审计入口。
+
+6) PSA-1 校验
+- 触发/冻结/解冻回执签名须由 gateway_registry_ref 或 issuer_region_node_ref 验签。
+- 提交/确认须满足 mobile_binding_data_system_ref 绑定一致性前提（见 A1.1-B5）。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2.1.2 采样回执 SampleCaptureReceipt
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+每张采样照片须生成 SampleCaptureReceipt 并由设备签名。
+
+最小字段：
+- lease_id（必填）：绑定到哪个工作租约。
+- capture_ref（必填）：FIXED_SERVICE_RESULT 时 = point_id（须 ∈ WorkLease.point_set[]）；RESULT_ACHIEVEMENT 时 = process_round_id。
+- view_id（必填）：写死 FRONT。
+- photo_hash（必填）：照片内容哈希（规范化口径由 proof_policy_ref 固定）。
+- ts（必填）：拍摄时间戳。
+- location_proof（必填）：GPS定位（lat + lng + accuracy）或网关映射位置（gateway_id + zone_id + 可验签位置断言）二选一；若为网关映射，须由 gateway_registry_ref 验签通过且在 ttl 内有效。
+- capture_session_id（必填）：一次拍摄会话 ID；退出/中断即结束，重拍须新 session。
+- device_pubkey（必填）
+- device_sig（必填）：对 (lease_id, capture_ref, view_id, photo_hash, ts, location_proof, capture_session_id, device_pubkey 及绑定字段) 的签名。
+- challenge_hash（可选）：若项目启用拍摄挑战码，须纳入签名。
+
+原子性规则：不接受跨 session 拼接；同一 session 下不得关联其他影像文件（除非 proof_policy_ref 显式开启并版本化）。
+
+PSA-1 校验：
+- device_pubkey ∈ root_id 的 device_pubkey_set（identity_binding_policy_ref）。
+- device_sig 验签通过。
+- lease_id 与 EvidenceBundle 一致。
+- location_proof 存在且合法。
+- capture_ref：FIXED_SERVICE_RESULT 时 point_id 须 ∈ WorkLease.point_set[]；RESULT_ACHIEVEMENT 时须满足 proof_policy_ref 对 process_round_id 的可复算绑定规则。
+- 若启用 challenge_hash：须由 presence_policy_ref / proof_policy_ref 验证通过。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2.1.3 随机点位采样 EvidenceBundle 字段要求（FIXED_SERVICE_RESULT）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EvidenceBundle/ResultUnit 须含：sample_captures[]（可选但强烈建议）/ sampling_commit_hash（必填）。
+
+PointComplete 定义（point_key = H(lease_id, point_id)）：
+在任意历史提交中（跨 trigger_seq 累计），存在 1 张有效 SampleCaptureReceipt 满足：lease_id 一致；capture_ref = point_id ∈ WorkLease.point_set[]；view_id=FRONT；device_sig 可验签；满足 proof_policy_ref 硬规则。一旦达成即永久 COMPLETE（除非 PSA-3 裁决撤销）。
+
+采样合规状态：
+- captured_count = |completed_point_set ∩ WorkLease.point_set[]|；points_count = |WorkLease.point_set[]|；missing_count = points_count - captured_count。
+- captured_count == points_count → COMPLETE；否则 INCOMPLETE。
+- INCOMPLETE 不否决服务真实性，须输出缺失集合摘要供结算层处理。
+- sampling_commit_hash = H(lease_id, sort_by(point_id)(photo_hash list), completed_point_set_digest, missing_point_set_digest, nonce)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2.1.4 自动判定阈值与结算钩子
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+可选字段：
+- defect_report_digest：机器判断问题摘要（类型/计数/置信度/模型版本的哈希承诺）。
+- outcome_attestation：官方 AI 或授权验收方对结果的带签名断言；须绑定并签名 outcome_binding_hash，至少含：project_id, version, service_type_id, root_id/participant_ref, target_ref, location_key（若有）, presence_session_id+presence_commit_hash, lease_id+lease_event_head_hash, task_token_id（若启用）, evidence_bundle_hash, sampling_commit_hash；签名须由 proof_policy_ref 指定的 ACTIVE 权威集合验签。
+
+PSA-1 输出事实（供 PSA-2/PSA-3 引用，PSA-1 不计算报酬数值）：
+points_count / captured_count / missing_count / missing_point_set_digest / sampling_commit_hash / sampling_compliance_status
+
+结算层可据此实现：
+- 证据合规折扣：evidence_compliance_factor = f(captured_count / points_count)（f 可为线性或阶梯）。
+- 随机采样加成（FIXED_SERVICE_RESULT + RANDOM_SAMPLED_POINTS，ONLINE 不适用）：sampling_bonus_factor = 0.05 × captured_count，cap = +0.20。
+- 每完成 1 个采样要求，同时计作 1 次有效任务心跳。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A2.1.5 失败处理
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- 任一验签失败或绑定不一致：须拒绝或 risk_flag。
+- sampling_compliance_status = INCOMPLETE：不得因此否决服务真实性，须输出完成度标记供结算层处理。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3. EvidenceBundle（证据封包）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+多/单结果模式：
+- result_units[] 非空：所有校验对每个 result_unit 逐条执行；顶层字段仅作兼容字段。
+- 否则：沿用单结果口径（顶层字段为准）。
+
+每个 ResultUnit 最小字段：
+service_type_id / target_ref（含 target_slot）/ unit_serial / time_completed（缺省继承顶层）/ evidence_items[] /（RANDOM_SAMPLED_POINTS 或 RESULT_ACHIEVEMENT 时须含）sampling_commit_hash + sample_captures[] + sampling_compliance_status。
+
+EvidenceBundle 字段：
+·project_id / version / service_type_id / result_units[]
+·target_ref（必填）：按 multi_target_mode 匹配（SINGLE→匹配 target_ref；MULTI→命中 target_refs[]）。
+·unit_serial（必填）
+·root_id（必填）：工作者根身份ID。
+·presence_session_id（必填）：须引用有效 PresenceSession。
+·presence_commit_hash（必填）：须 = 对应 session 的 presence_commit_hash。
+·lease_id（必填）：须引用有效 WorkLease（state=HELD 或策略允许的等价态）。
+·lease_event_head_hash（必填）：须 = WorkLease.lease_event_head_hash。
+·participant_ref（必填）：{INDIVIDUAL, root_id} 或 {GROUP, participant_group_id, submitter_root_id, member_set_ref}。
+·group_signatures（GROUP 时必填）：n-of-n 全员对同一 evidence_bundle_hash 签名；group_sig_agg_hash = H(按 member_id 排序后的签名清单)。
+·task_token_id（条件必填，项目启用两段式令牌时）：须满足 token.lease_id == bundle.lease_id 且 token.root_id == bundle.root_id。
+·location_attestation（可选但强烈建议）：Sig_gateway(project_id, version, gateway_id, zone_id, root_id, ts, location_key, confidence, ttl, nonce)；PSA-1 校验签章来自 gateway_registry_ref 且在 ttl 内有效。
+·location_key（条件必填）：anchor_type=SPACE 时 = grid_id；否则由 location_attestation 或 gateway_map_policy_ref 可复算；若存在 location_attestation 须与之一致；仅用于范围校验/审计回放/抽检索引，不参与 anti_replay 唯一键（除非 anti_replay_policy_ref 明确声明）。必填触发条件：proof_policy_ref 或 service_type 声明 requires_location_key = TRUE。
+·geo（可选）
+·grid_id（anchor_type=SPACE 时必填，否则可选）：若提供须与 location_key 满足 gateway_map_policy_ref 的可复算一致性。
+·object_tag_id（必填）：物理标签ID。
+·time_completed（result_units[] 为空时必填；非空时可选，若存在则作为所有 ResultUnit 的默认值）。
+·mobility_trace_commit_hash（必填）：H(gateway_id, zone_id, root_id, time_window, path_digest, sample_count, confidence_stats, nonce, ...)；须由 gateway_id 或 issuer_region_node_id 签章。
+·trace_data_ref（可选）：加密轨迹包引用，仅争议时按 dispute_policy_ref 解密调取。
+·evidence_items[]：{type, hash, timestamp, source, optional_signature}
+·nonce（可选）
+·device_sig（必填）：设备对 evidence_bundle_hash 的签名；device_pubkey ∈ root_id 的 device_pubkey_set。
+
+RESULT_ACHIEVEMENT 过程采样须同样携带：sample_captures[] / sampling_commit_hash / sampling_compliance_status（按 A2.1.0 口径执行；语义为过程轮次，非物理点位）。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3.1 PresenceSession（在场会话）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+最小字段：
+·project_id / version
+·zone_id（可选但强烈建议）
+·gateway_id（必填）：须在 gateway_registry_ref 中注册且 Active。
+·issuer_region_node_id（必填）
+·root_id / device_pubkey（必填）
+·challenge_hash（必填）：网关对 root_id 发放的一次性挑战码。
+·gateway_challenge_sig（必填）：网关对 (project_id, version, zone_id, gateway_id, root_id, device_pubkey, challenge_hash, issued_at, expires_at) 的签名；证明挑战来自已注册且 Active 的官方网关。
+·response_sig（必填）：设备对 challenge_hash 的签名。
+·issued_at / expires_at（必填）
+
+输出：
+·presence_session_id = H(project_id, version, root_id, device_pubkey, gateway_id, zone_id, challenge_hash, issued_at, expires_at)
+·presence_commit_hash = H(presence_session_id, project_id, version, root_id, device_pubkey, gateway_id, zone_id, challenge_hash, gateway_challenge_sig, response_sig, issued_at, expires_at)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3.2 WorkLease（任务租约）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：占用一个具体坑位（slot instance），防并发抢占与"先占坑后补证据"。
+
+最小字段：
+·lease_id / project_id / version / service_type_id
+·lease_key（必填）：H(project_id, version, service_type_id, anchor_type, anchor_id, target_slot, unit_serial)；unit_serial 是坑位实例的唯一标识，不同坑位对应不同 lease_key，互不阻塞；坑位 FINALIZED 后永久封账，该 lease_key 不再可被领取。
+·point_set[]（条件必填）：当 proof_schema.type = RANDOM_SAMPLED_POINTS 时必填；由系统在接取任务时按 TargetRef+TargetSlot 空间语义分配并写入，元素为 point_id；签发后不可替换；工作者不得指定点位。
+·idle_ttl：HELD 状态下超过此时长无有效心跳（见 A3.2.0）则自动释放（reason=IDLE_TIMEOUT）。
+·participant_ref（必填）
+·bound_presence_session_id（必填）
+·state：∈ {HELD, PAUSED, LOCK_FREEZE, TRANSFERRED, RELEASED, FINALIZED}
+·lease_expires_at（必填）
+·pause_expires_at（PAUSED 时必填）
+·transfer_record_hash（TRANSFERRED 时必填）
+·lease_event_head_hash（必填）：事件承诺链最新头哈希。
+·lease_event_seq（必填）：单调递增。
+
+LeaseEvent 最小字段：
+lease_id / event_type（PAUSE|RESUME|LOCK_FREEZE|UNFREEZE|TRANSFER|RELEASE|FINALIZE）/ from_participant_ref / to_participant_ref（TRANSFER 时）/ reason_code（RELEASE/FINALIZE 时）/ ts / prev_event_commit_hash / event_seq / event_sig(s)
+
+event_commit_hash = H(lease_id, event_type, from_participant_ref, to_participant_ref, reason_code, ts, prev_event_commit_hash, event_seq, H(按签名者排序后的 event_sig 列表))
+lease_event_head_hash = event_commit_hash；断链或 event_seq 回退视为无效。
+
+TRANSFER 双签规则：event_sig(s) 须同时含 from_sig（"我转移给你"）+ to_sig（"我接受接棒"）；签名须至少覆盖 lease_id, event_type, from/to_participant_ref, ts, prev_event_commit_hash, event_seq；缺失任一方则 TRANSFER 无效。
+
+LOCK_FREEZE / UNFREEZE 规则：
+- LOCK_FREEZE：to_participant_ref 为空；冻结期间 lease_key 不得重新领取；触发条件由 proof_policy_ref/A2.1.1 写死。
+- UNFREEZE：须有可验证解冻依据（公安/救护确认回执）；回退目标（HELD/RELEASED/TRANSFERRED）由 proof_policy_ref/mobile_binding_policy_ref 写死。
+- 两者的 event_sig(s) 须覆盖：lease_id, event_type, from_participant_ref, ts, prev_event_commit_hash, event_seq, 冻结/解冻依据摘要。
+
+RANDOM_SAMPLED_POINTS 额外约束：
+HELD 状态下还须受 SamplingTrigger 限时约束（以 A2.1 为准）；满足偶数轮超时释放条件时输出 LeaseReleased(reason=SAMPLE_TRIGGER_TIMEOUT)，最小字段：
+lease_id / lease_key / project_id / version / trigger_id / trigger_seq / selected_point_id / trigger_issued_at / trigger_deadline_at / release_ts / point_key = H(lease_id, selected_point_id) / completion_evidence_digest = H(lease_id, selected_point_id, latest_valid_photo_hash, receipt_ts_bucket, nonce) / release_attestation_sig（须由 gateway_registry_ref 或 issuer_region_node_ref 验签）。
+该释放不依赖 idle_ttl；释放后 lease_key 回到可领取（或进入 RISK_HOLD，取决于策略引用）。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3.2.0 任务心跳规则
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+有效心跳最小集合（须至少包含其一，idle_ttl 以此为准）：
+
+| 类型 | 适用场景 | 触发条件 |
+|---|---|---|
+| 空间移动心跳 | FIXED_SITE / 物理网关 | 相对上一可验证位置移动 ≥ 5m |
+| 采样完成心跳 | FIXED_SERVICE_RESULT | 每完成 1 个随机采样点位 |
+| 采样完成心跳 | RESULT_ACHIEVEMENT | 每完成 1 轮过程采样 |
+| 进度更新心跳 | ONLINE / 非物理现场 | 任一可复算进度更新（最小 1 byte） |
+
+work_lease_policy_ref 可在此基础上额外承认 LeaseEvent 等其他动静，但不得与上表冲突。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3.2.1 任务接取并发限制
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+并发主体键：INDIVIDUAL → root_id；GROUP → participant_group_id。
+同一时间内，同一并发主体键持有的 WorkLease.state ∈ {HELD, PAUSED} 不得超过 1 个。
+（不限制单一任务内部按 service_type/target_ref/result_units[] 允许的对象数量或工作量规模）
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3.2.2 项目冷却冻结规则
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1) 连续放弃冷却：同一并发主体键在同一 project_id 下连续 3 次"已接取未 FINALIZED 即结束"→ 冻结至下一个周一 00:00（项目本地时区）；任一成功 FINALIZED 清零计数。
+2) PSA-3 补救超时冷却：PSA-3 补救程序达 72 小时上限仍未完成 → 同上冻结。
+3) 冻结期效力：不得接取该 project_id 任何新任务；届满自动或按策略解冻；解冻后计数归零。
+4) 留痕：ParticipantProjectAcceptanceFrozen(project_id, participant_ref, reason_code, freeze_until_ts, ts) / ParticipantProjectAcceptanceUnfrozen(project_id, participant_ref, ts)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3.2.3 RestTime（休息时间）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+·额度：每日 2h，次日 0:00 刷新；不得通过"释放→重新接取"刷新。
+·使用制：可分段使用/暂停，由工作者自由决定。
+·采样响应窗内禁止开启休息（硬门槛）：
+  - FIXED_SITE：trigger_issued_at 至 trigger_deadline_at 内；
+  - MOBILE_OFFLINE：trigger_issued_at 至 +30min 内；
+  - 违反须拒绝或 risk_flag。
+·FIXED_SITE 休息离场豁免：休息中离场不触发 release；但休息结束时仍离场须立即触发 LEFT_ZONE 释放。
+·MOBILE_OFFLINE/ONLINE：仅限额度与响应窗约束；线上等价实现由 rest_time_policy_ref/proof_policy_ref 定义。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A3.3 TaskToken（任务令牌）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：两段式设计——公告/浏览阶段不发令牌，WorkLease 成功建立后才发放，进入可验证凭证流。
+
+最小字段：token_id / project_id / version / root_id / lease_id / gateway_id / zone_id（强烈建议）/ issued_at / expires_at / token_sig（网关对上述字段的签名）。
+
+PSA-1 校验：token_sig 可由 gateway_registry_ref 验签 + 未过期 + token.lease_id == bundle.lease_id 且 token.root_id == bundle.root_id。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A4. ServiceTag（服务标签）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+仅用于提交事件标识与审计索引承诺；不得实现为 anti_replay_key 或确认锁主键。
+
+单结果口径：
+service_tag = H(project_id, version, service_type_id, participant_ref.type, (INDIVIDUAL?root_id:participant_group_id), (INDIVIDUAL?device_sig:group_sig_agg_hash), target_ref / location_key / object_tag_id / unit_serial, time_completed, evidence_bundle_hash, nonce)
+
+多结果口径（result_units[] 非空，为每个 result_unit 生成 service_tag_i）：
+service_tag_i = H(project_id, version, result_unit.service_type_id, participant_ref.type, (INDIVIDUAL?root_id:participant_group_id), (INDIVIDUAL?device_sig:group_sig_agg_hash), result_unit.target_ref / location_key / object_tag_id / result_unit.unit_serial, (result_unit.time_completed or EvidenceBundle.time_completed), evidence_bundle_hash, unit_index_i, nonce)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+B. 最小校验流程
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+流程 1：PublishProjectLite
+输入：ProjectLiteSpec + owner 签名
+校验：
+- project_id/version/owner/status/time_window/location_scope 存在。
+- service_templates[] 非空，每个 service_type_id 对应 ServiceUnitType 存在。
+- 每个 ServiceUnitType 含 acceptance_rule + proof_schema；required_fields 须含 unit_serial。
+- acceptance_policy_ref / proof_policy_ref / anti_replay_policy_ref / dispute_policy_ref 均存在。
+- 序列化与哈希口径固定（默认 JCS + SHA-256），同版本内不得变更。
+输出：ProjectLitePublished(project_id, version, hash(spec))
+
+────────────────────────────────────
+流程 2：ActivateProjectLite
+输入：project_id + version + owner 签名
+校验：
+- 项目状态须为 Draft（Publish 将项目登记为 Draft；Activate 将其变更为 Active）。
+- location_scope 非空。
+- anti_replay_policy_ref 已绑定。
+- dispute_policy_ref 已绑定。
+输出：ProjectLiteActivated(project_id, version, hash(spec))
+
+────────────────────────────────────
+流程 2.5：AcquireWorkLease（接取任务）
+输入：project_id + version + service_type_id + unit_serial + root_id + device_sig + presence_session_id
+
+前提：
+- 服务者已到达网关范围，PresenceSession 已建立且有效（见 A3.1）。
+- ONLINE 项目等价：通过网络网关完成等价在场证明，无须物理到场。
+
+校验：
+- 项目须为 Active。
+- presence_session_id 有效；session.root_id == root_id；session.device_pubkey ∈ root_id 的 device_pubkey_set。
+- service_type_id 须在 service_templates[] 内。
+- 并发检查：该并发主体键当前不持有任何 HELD 或 PAUSED 的 WorkLease（见 A3.2.1）。
+- 冻结检查：该并发主体键未处于该 project_id 的 ParticipantProjectAcceptanceFrozen 有效期内（见 A3.2.2）。
+- lease_key = H(project_id, version, service_type_id, anchor_type, anchor_id, target_slot, unit_serial)；该 lease_key 当前未被任何 HELD/PAUSED 的 WorkLease 占用；且未处于 FINALIZED 状态。
+
+系统动作：
+- 生成 WorkLease（state=HELD），写入 lease_id / lease_key / participant_ref / bound_presence_session_id / lease_expires_at / lease_event_head_hash（GENESIS）。
+- 若 proof_schema.type = RANDOM_SAMPLED_POINTS：按 TargetRef+TargetSlot 空间语义分配点位，写入 WorkLease.point_set[]。
+- 签发 TaskToken（若项目启用两段式令牌），绑定 lease_id。
+
+输出：WorkLeaseAcquired(project_id, version, lease_id, lease_key, root_id, participant_ref, point_set[]（若适用）, task_token_id（若适用）, ts)
+
+────────────────────────────────────
+流程 3：SubmitService
+输入：EvidenceBundle + device_sig（INDIVIDUAL）或 group_signatures（GROUP）
+result_units[] 非空则对每个 result_unit 逐条执行全部校验；否则沿用单结果口径。
+
+校验清单：
+① 项目须为 Active。
+② PresenceSession：session 存在且有效（未过期、未离场）；session.root_id == bundle.root_id；session.device_pubkey ∈ root_id 的 device_pubkey_set。
+③ 离场释放分流：
+   - FIXED_SITE：session 失效且未 Pause/Transfer → 释放（reason=LEFT_ZONE）；休息中豁免，休息结束仍离场须立即释放。
+   - MOBILE_OFFLINE：离场不触发释放；在岗约束由 A2.1.1 + mobile_binding_policy_ref 承担；仅满足显式放弃/合法转让条件时才允许释放。
+   - ONLINE：由 proof_policy_ref/work_lease_policy_ref 线上等价实现定义。
+④ service_type_id 须在 service_templates[] 内。
+⑤ proof_schema 校验通过（证据类型齐全、哈希字段齐全、时间戳格式、来源字段）。
+⑥ RANDOM_SAMPLED_POINTS 校验（若适用）：
+   - WorkLease.point_set[] 存在且非空；bundle.lease_id 对应的 WorkLease 有效。
+   - sample_captures[] 中每个回执：device_sig 可验签；lease_id 与 bundle.lease_id 一致；capture_ref(point_id) ∈ WorkLease.point_set[]。
+   - sampling_commit_hash 可复算一致。
+   - 若 requires_location_key：bundle.location_key 须存在且合法。
+   - 提交新鲜度：submit_success_ts ≤ 最近一次 SampleRoundStatus=COMPLETE 的 round_completed_at + 30min。
+⑦ TaskToken（项目启用时）：token 存在且未过期；token_sig 可验签；token.lease_id == bundle.lease_id；token.root_id == bundle.root_id。
+⑧ TargetSlot 校验：须通过 slot_ns/slot_id/params 的三层 schema 校验（格式、长度、允许键集合、禁动作语义）；注册表口径优先于 schema_ref；target_slot 必填时缺失则拒绝。
+⑨-a 服务对象匹配：
+   - SINGLE：bundle.target_ref 须与 ProjectLiteSpec.target_ref 匹配（至少 anchor_type+anchor_id；target_slot 视项目要求）。
+   - MULTI：bundle.target_ref 须命中 ProjectLiteSpec.target_refs[] 白名单中的某一个。
+⑨-b 地理范围校验：
+   - anchor_type=SPACE：grid_id 须落在 location_scope 内；若提交 geo 则先映射为 grid_id 再校验。
+   - anchor_type≠SPACE：若提供 geo/grid_id，须落在 location_scope 内（可选校验）。
+⑨-c 锚点注册表校验：
+   - anchor_id 须在 anchor_registry_ref 中为 Active 状态。
+   - 若提供 zone_id/gateway_id：anchor_id 的归属须与之一致（口径由 anchor_registry_ref 定义）。
+   - target_slot 须满足注册表给出的 allowed_target_slots。
+⑩ anti_replay：
+   anti_replay_key = H(project_id, version, service_type_id, canonical_target_ref_hash, unit_serial)
+   canonical_target_ref_hash = H(anchor_type, anchor_id, target_slot, ... canonicalized)
+   location_key 默认不参与（除非 anti_replay_policy_ref 明确声明）；result_units[] 非空时按每个 result_unit 分别计算。
+⑪ 参与者校验：
+   - INDIVIDUAL：root_id 一致，device_sig 可由 device_pubkey_set 验签。
+   - GROUP：member_set_ref 可引用，group_signatures 覆盖全员（n-of-n），每签名对同一 evidence_bundle_hash 有效；否则直接拒绝。
+⑫ 设备绑定：device_pubkey 不在 device_pubkey_set 中须提示"设备未绑定/不一致"并 risk_flag；是否拒绝由 acceptance_policy_ref 或 PSA-3 决定。
+⑬ WorkLease：
+   - lease_id 存在且 state=HELD（或策略允许的等价态）。
+   - lease_key 锁定具体坑位（含 unit_serial），同一 lease_key 同时只允许一个人占用；已 FINALIZED 的坑位不得重新领取；RELEASED 的坑位可重新领取。
+   - WorkLease.bound_presence_session_id 对应的 session.root_id == bundle.root_id。
+   - bundle.lease_event_head_hash == WorkLease.lease_event_head_hash。
+⑭ 并发/冻结：并发主体键不得同时持有多个 HELD/PAUSED WorkLease；不得在 ParticipantProjectAcceptanceFrozen 冻结期内接取新任务。
+
+输出：ServiceSubmitted(project_id, version, service_tag, evidence_bundle_hash, participant_ref, root_id, lease_id, time_completed) → 进入待验收队列。
+
+────────────────────────────────────
+流程 4：ConfirmService
+输入：service_tag + verifier 签名（或自动校验输出）
+校验：
+- acceptance_rule 满足，验收模式符合 acceptance_policy_ref 的 risk-tiered policy。
+- verifier 权限/角色符合 acceptance_policy_ref。
+- 确认锁（anti_replay 再次校验）：同 (project_id, version, service_type_id, canonical_target_ref_hash, unit_serial) 不得重复确认；location_key/object_tag_id 默认不参与确认锁。
+- AUTO/HYBRID 可接受 scan_proof_hash 作为验收输入；扫描失败/矛盾触发 ServiceDisputed（裁判归 PSA-3）。
+
+输出：
+·ServiceConfirmed：
+  - WorkLease.state → FINALIZED；该坑位永久封账，不再接受任何新接取或提交；同一任务下其他坑位不受影响。
+  - 服务记录（service_tag / evidence_bundle_hash）进入 PSA-2 结算队列；PSA-2 完成后连同 PSA-1 输出进入 PSA-3 审计；PSA-3 通过后封包。
+  - 需求饱和标记输出（供 PSA-2 计算报酬）：fulfilled_count（该 target_ref+target_slot 下已 FINALIZED 坑位总数）/ demand_unit（原始需求量，由 unit_spec 或 proof_policy_ref 定义）/ saturation_flag（fulfilled_count ≥ demand_unit 时为 TRUE）。saturation_flag=TRUE 时 PSA-2 可将报酬计算为趋近于0；PSA-1 不阻止任何新接取。
+·ServiceRejected / ServiceDisputed / 超时：WorkLease.state → RELEASED；坑位回到可领取（或进入 RISK_HOLD，取决于 dispute_policy_ref / work_lease_policy_ref）。
+
+ServiceConfirmed(project_id, version, service_tag, verifier_id, result=ACCEPT)
+ServiceRejected(..., reason_code)
+ServiceDisputed(..., dispute_id)（只开入口，裁判在 PSA-3）
+
+
+作者：潘正阳（Zhengyang Pan）｜一根大萝卜（BBBigradish）
