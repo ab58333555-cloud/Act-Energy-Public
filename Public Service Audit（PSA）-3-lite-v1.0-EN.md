@@ -820,3 +820,7 @@ SettlementAmendment(
 | Any open `Dispute` / `Hold` / `AuditOpen` state | Gate **must** be `BLOCKED` or `DELAYED` |
 
 > **When in doubt, delay — never overpay.**
+
+---
+
+*Author: Zhengyang Pan (潘正阳) | BBBigradish (一根大萝卜)*
