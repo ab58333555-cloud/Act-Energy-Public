@@ -1,7 +1,5 @@
 # PSA-3 · Two-Stage Audit with On-chain Trail 🧾⛓️
 
-**Author:** Zhengyang Pan (潘正阳) · BBBigradish (一根大萝卜)
-
 ---
 
 ## Purpose
