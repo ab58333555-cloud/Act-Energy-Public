@@ -1917,7 +1917,7 @@ For ecological redlines or high-risk materials, the system can raise scarcity le
 
 When a scientific breakthrough was not pre-launched as a project:
 
-maintainers initiate a recognition PSP
+any individual may initiate a retroactive public project for recognition.
 
 audit and confirm contribution ratios
 
