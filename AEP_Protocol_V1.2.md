@@ -24,6 +24,8 @@ This release adds **Section 2.4.7.3 Inflation-Triggered Accelerated Decay**, exp
 - Added Section 4.0.4: Evolution Domain — Evolution Value (EVO) tracking whether science and development continuously advance humanity upward.
 - Added Section 4.3: Project Initiation & Approval Mechanism — open initiation rights, structured review body (Maintainers 30% / Domain Experts 30% / Public 40%), >2/3 weighted majority threshold.
 - Added Section 5.2.1: Ecological Impact Attribution Framework — multi-dimensional composite model for ecological projects comprising V_base, V_regulate, V_human, and NetworkFactor.
+
+
 - Added Section 9.2.2.1: Good Faith Liability Reduction — up to 100% liability reduction (stacking: non-malicious 20%, unforeseeable 50%, procedure-complete 30%) for reviewers who can demonstrate good-faith and unforeseeable harm.
 - Remove 3.3.4.2 Evidence Hierarchy: multi-source redundancy and anti-forgery prioritization. Temporal requirement: data must span at least one growth window (e.g., 30/60/90 days), to prevent same-day fabrication.
 - Revise Chapter 12 | Unpredictable Scientific Breakthroughs (Retroactive Recognition Mechanism): when a scientific breakthrough was not pre-registered in advance, any individual may initiate a retroactive public project for recognition.
@@ -758,7 +760,7 @@ Different signatures: evidence packs must carry source signatures; keys/device f
 
 Different pipelines: one from executor reporting, another from system random audit / third-party remote-sensing interface
 
-Different times: span at least one growth window (e.g., 30/60/90 days) to avoid same-day fabrication
+
 
 &nbsp;
 
