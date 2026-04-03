@@ -987,7 +987,19 @@ Using regional population's basic healthcare accessibility, waiting times, cover
 Using regional public transportation accessibility rate, basic commute waiting times, and transport network capacity surplus as core parameters, evaluates whether the public transportation system can meet the whole population's basic mobility needs and is operating stably. When TBV is low, transportation infrastructure construction, maintenance, and operations PSPs are triggered.
 
 **Energy — Energy Balance Value (EVB)**
-Using regional energy production capacity, storage surplus, and basic residential and public-service energy guarantee coverage rate as core parameters, evaluates whether energy supply can stably support Layer 0 basic operations and Layer 1 reasonable demand; simultaneously evaluates whether, in the absence of new energy inputs (covering interruption scenarios including disasters, extreme weather, and war), the regional energy system can operate stably for no less than 180 days (≥6 months) relying on existing storage and anti-fluctuation capacity. The above two items—daily supply sufficiency and extreme-condition self-sustaining capacity—hold equal priority; failure of either is treated as EVB being low. All assessments must be conducted within the bounds of sustainability and ecological constraints. When EVB is low, energy infrastructure construction, clean energy R&D, and emergency storage PSPs are triggered.
+Utilizes regional energy production capacity, storage margins, and basic civil/public service coverage as core parameters, evaluated strictly within sustainable and ecological constraints.
+
+Evaluates daily energy supply sufficiency AND extreme-condition self-sustaining/recovery capacity; both hold equal priority.
+
+Daily Supply Sufficiency: Stably supports Layer 0 basic operations and Layer 1 reasonable demands.
+
+Extreme-Condition Capacity (No New Input): Assesses system resilience utilizing existing storage and anti-fluctuation capabilities during disruptions (disasters, extreme weather, warfare):
+
+Reserve Energy: Must sustain normal state >90 days, compressed state >150 days, and survival state >300 days.
+
+Flowing Energy: Must restore basic operations within 72 hours, primary functions within 30 days, and achieve full recovery within 90 days.
+
+Trigger: Any non-compliance classifies EVB as low, automatically triggering public affairs projects for energy infrastructure construction, clean energy R&D, and emergency storage.
 
 **Safety — Safety Balance Value (SBV)**
 Using regional public safety incident rate, emergency response timeliness, social order stability, and high-risk hazard coverage rate as core parameters, evaluates whether the public safety and order maintenance system is operating within a safe range. When SBV is low, safety protection, emergency response, and risk-handling PSPs are triggered.
