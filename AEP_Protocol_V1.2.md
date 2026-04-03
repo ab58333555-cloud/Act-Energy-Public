@@ -2182,7 +2182,19 @@ Evaluates whether healthcare supply meets the whole population's basic health ne
 Evaluates whether public transportation meets the whole population's basic mobility needs, based on accessibility rate, waiting times, and capacity surplus.
 
 **Energy Balance Value (EVB)** *(New in v1.2)*:
-Evaluates daily energy supply sufficiency AND extreme-condition self-sustaining capacity (≥90 days without new input); both hold equal priority.
+Utilizes regional energy production capacity, storage margins, and basic civil/public service coverage as core parameters, evaluated strictly within sustainable and ecological constraints.
+
+Evaluates daily energy supply sufficiency AND extreme-condition self-sustaining/recovery capacity; both hold equal priority.
+
+Daily Supply Sufficiency: Stably supports Layer 0 basic operations and Layer 1 reasonable demands.
+
+Extreme-Condition Capacity (No New Input): Assesses system resilience utilizing existing storage and anti-fluctuation capabilities during disruptions (disasters, extreme weather, warfare):
+
+Reserve Energy: Must sustain normal state >90 days, compressed state >150 days, and survival state >300 days.
+
+Flowing Energy: Must restore basic operations within 72 hours, primary functions within 30 days, and achieve full recovery within 90 days.
+
+Trigger: Any non-compliance classifies EVB as low, automatically triggering public affairs projects for energy infrastructure construction, clean energy R&D, and emergency storage.
 
 **Safety Balance Value (SBV)** *(New in v1.2)*:
 Evaluates whether the public safety and order system is within a safe range, based on incident rate, response timeliness, stability, and hazard coverage.
