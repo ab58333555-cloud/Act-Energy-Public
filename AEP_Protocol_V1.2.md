@@ -2182,7 +2182,7 @@ Evaluates whether healthcare supply meets the whole population's basic health ne
 Evaluates whether public transportation meets the whole population's basic mobility needs, based on accessibility rate, waiting times, and capacity surplus.
 
 **Energy Balance Value (EVB)** *(New in v1.2)*:
-Evaluates daily energy supply sufficiency AND extreme-condition self-sustaining capacity (≥180 days without new input); both hold equal priority.
+Evaluates daily energy supply sufficiency AND extreme-condition self-sustaining capacity (≥90 days without new input); both hold equal priority.
 
 **Safety Balance Value (SBV)** *(New in v1.2)*:
 Evaluates whether the public safety and order system is within a safe range, based on incident rate, response timeliness, stability, and hazard coverage.
