@@ -6,11 +6,6 @@
 **Change Type:** Added / Renumbered
 **Status:** Forward-only, non-retroactive
 
-&nbsp;
-
-## Update Summary (v1.2)
-
-This release adds **Section 2.4.7.3 Inflation-Triggered Accelerated Decay**, expands **Chapter 4** with a comprehensive domain indicator framework (Sections 4.0–4.0.4 and 4.3), adds **Section 5.2.1 Ecological Impact Attribution Framework**, adds **Section 9.2.2.1 Good Faith Liability Reduction**, and substantially expands Appendix A and Appendix B to reflect all new mechanisms.
 
 &nbsp;
 
@@ -28,7 +23,7 @@ This release adds **Section 2.4.7.3 Inflation-Triggered Accelerated Decay**, exp
 
 ### Reader Note
 
-For full normative text, see all sections below. Sections unchanged from v1.1 are reproduced in full for reference continuity.
+For full normative text, see all sections below. Sections unchanged from v1.2 are reproduced in full for reference continuity.
 
 &nbsp;
 &nbsp;
@@ -1072,7 +1067,69 @@ Example: forest restoration can be decomposed into planting, maintenance, patrol
 
 &nbsp;
 
-## 4.3 Project Initiation & Approval Mechanism *(New in v1.2)*
+## 4.3 Anti-Threshold Principle *(New in v1.3)*
+
+The Anti-Threshold Principle operates in parallel with the Sub-project Decomposition Principle (4.2), together forming the foundational design philosophy of AEP's public-affairs participation system.
+
+AEP's core position is this: every person carries inherent and unique value, and is equally deserving of support, recognition, and opportunity. No one is required to first prove they are "qualified enough" in order to earn the right to participate, learn, and contribute. The mission of the Anti-Threshold Principle is to institutionally and permanently end the logic of "you must first prove yourself before you are worth rewarding"—it does not require educational credentials, certifications, wealth, reputation, appearance, or any form of pre-declared qualification as a precondition for participating in public affairs.
+
+&nbsp;
+
+### 4.3.1 Universal Learning Pathways
+
+The system establishes a dedicated learning pathway for every category of public-affairs work. Any person with the willingness to participate may use a learning pathway to acquire the necessary knowledge, skills, techniques, and theory, and—upon completing the pathway—earn the qualification to participate in that work.
+
+The design principle of learning pathways is: the form and depth of learning are determined by the characteristics of the work itself, not by any imperative to "demonstrate capability." For each work category, the system determines the appropriate learning pathway type based on parameters including professionalism, technical complexity, danger level, scarcity, and operational difficulty, and guarantees that every learning pathway is unconditionally open to all.
+
+&nbsp;
+
+### 4.3.2 Tiered Learning Formats
+
+The system divides learning pathways into two categories based on work characteristics:
+
+**(I) Basic Training Track:** Applies to physical labor and foundational technical work with well-defined operating standards, low technical barriers, and manageable risk. Learning formats include but are not limited to: video instruction, illustrated guides, simulation drills, and online assessments. Passing the assessment is sufficient to obtain participation eligibility; no course-hour accumulation is required.
+
+**(II) Academy Track:** Applies to work types requiring a systematic knowledge base, carrying higher operational risk, demanding significant specialization, or requiring extended practical accumulation. The Academy Track has a complete curriculum, required learning duration, and phased outcome acceptance standards; learning outcomes are marked by verifiable milestone checkpoints that progressively unlock eligibility for higher-complexity participation.
+
+Which learning pathway type applies to each work category, along with the learning duration, curriculum structure, and outcome acceptance standards, are dynamically calibrated by the system based on work characteristics and versioned on-ledger to ensure traceability, auditability, and rollback capability.
+
+&nbsp;
+
+### 4.3.3 Learning Support & Incentives
+
+To ensure that the will to learn is not interrupted by survival pressure, the system provides the following support to learners actively enrolled in a learning pathway:
+
+**(I) Daily Learning Stipend:** A basic living stipend is issued daily throughout the learning period, covering only minimum daily living needs. The stipend standard is linked to the Layer 0 survival stack, ensuring that a learner's baseline survival is never threatened during the learning period.
+
+**(II) Milestone Bonus:** Upon completing a verifiable phased learning milestone, the learner receives a one-time small bonus to recognize the incremental effort and sustain learning motivation. Milestone outcomes must satisfy the acceptance standards specified by the corresponding learning pathway.
+
+**(III) Completion Scholarship:** Upon completing the full learning pathway and passing the final acceptance assessment, the system issues a completion scholarship determined by a composite evaluation of the work type's professionalism, technical complexity, danger level, scarcity, and operational difficulty. Parameter weights and scholarship calculation standards are dynamically calibrated by the model and versioned on-ledger.
+
+The above three forms of support are only active while the learner is in a valid learning state. The criteria for valid learning state are applied separately by pathway type:
+
+**Basic Training Track — valid learning determination:**
+The system uses verifiable completion of learning behaviors as the basis for daily stipend issuance. The specific determination rules are as follows: video instruction must be played in full without skipping; illustrated materials must be fully loaded and reach the system-recorded minimum reading duration; simulation drills must be completed through all required operational steps. All behavior records are captured objectively by the system and are not based on self-reporting by the learner.
+
+Assessment timing is at the learner's own discretion; a learner may apply to sit the assessment at any time after completing all learning materials. Once the assessment is passed, the assessment eligibility for that learning pathway is permanently closed; repeated assessment to accumulate milestone bonuses or completion scholarships is not permitted.
+
+**Academy Track — valid learning determination:**
+The system manages learning progress through a three-tier structure of classroom attendance check-in, phased milestone examinations, and a graduation examination. Classroom attendance check-in records serve as the basis for daily stipend issuance; passing a phased milestone examination releases the corresponding milestone bonus.
+
+For learners who do not pass a milestone examination, the system provides a remedial examination mechanism: within each subsequent milestone examination window, learners may submit a remedial application for any previously unpassed milestone, ensuring that learning progress remains repairable. The graduation examination allows two attempts: learners who do not pass the first attempt may apply for one resit. If the resit is also not passed, the course of study is terminated, and the system activates a 90-day cooling-off period on the learner's eligibility to re-enter that work type's learning pathway. Once the cooling-off period ends, the learner may re-enter the learning pathway for that work type.
+
+All learning behavior records are written on-ledger and bound to the learner's Root ID. Anomaly detection under the 3.3 PSA verification standard is applied to prevent systematic abuse of learning stipends.
+
+&nbsp;
+
+### 4.3.4 Qualification & Participation Bridge
+
+Upon completing a learning pathway and passing the acceptance assessment, the system issues a participation qualification for the corresponding work type, which is directly incorporated into the public-affairs task-matching system. Qualifications are written on-ledger and bound to the learner's Root ID; no external certificate, institutional endorsement, or third-party certification is required as a supplementary condition.
+
+Qualifications do not carry an automatic expiry mechanism. However, for holders who have not participated in the corresponding work type over an extended period, the system may introduce a reasonable review and re-acceptance recommendation at the time of task matching—rather than mandatory revocation—to safeguard participation quality.
+
+&nbsp;
+
+## 4.4 Project Initiation & Approval Mechanism *(New in v1.2)*
 
 Any natural person, group, or organization may initiate a public service project application. The initiator must submit a "Project Initiation Report" covering: project background and real-world demand justification, anticipated public benefit and indicator changes, long-term impact assessment, verifiable evidence and data support, and risk identification and response plan. Report quality and argumentative completeness are assessed by the review system; no educational, professional, or identity qualifications are required, but the report must comply with the mandatory field requirements of 3.3.4.1 Task Template Hard Schema, and the argument must be auditable and traceable.
 
